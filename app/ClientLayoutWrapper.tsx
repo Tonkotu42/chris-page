@@ -23,9 +23,27 @@ export default function ClientLayoutWrapper({
     const audio = new Audio("/audio/startup.mp3");
     audio.volume = 0.5;
 
+    // ユーザー操作で音声を再生する関数
+    const playAudio = () => {
+      if (!hasVisited) {
+        audio.play().catch((error) => {
+          console.log("再生エラー:", error);
+        });
+      }
+      // イベントリスナーを削除
+      document.removeEventListener("click", playAudio);
+      document.removeEventListener("touchstart", playAudio);
+      document.removeEventListener("keydown", playAudio);
+    };
+
+    // 初回訪問時はユーザー操作を待つ、または即座に再生を試みる
     if (!hasVisited) {
-      audio.play().catch((error) => {
-        console.log("自動再生ブロック:", error);
+      // まず自動再生を試みる
+      audio.play().catch(() => {
+        // 自動再生がブロックされたらユーザー操作を待つ
+        document.addEventListener("click", playAudio);
+        document.addEventListener("touchstart", playAudio);
+        document.addEventListener("keydown", playAudio);
       });
     }
 
@@ -39,6 +57,9 @@ export default function ClientLayoutWrapper({
     return () => {
       clearTimeout(timer);
       audio.pause();
+      document.removeEventListener("click", playAudio);
+      document.removeEventListener("touchstart", playAudio);
+      document.removeEventListener("keydown", playAudio);
     };
   }, []);
 
