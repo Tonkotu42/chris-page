@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import LoadingScreen from "./LoadingScreen";
 
@@ -40,7 +41,7 @@ export default function ClientLayoutWrapper({
   }, []);
 
   // タッチ時のハンドラー
-  const handleTouch = () => {
+  const handleTouch = (e: React.MouseEvent | React.TouchEvent) => {
     if (!waitingForTouch) return;
     
     setWaitingForTouch(false);

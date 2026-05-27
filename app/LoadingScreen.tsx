@@ -5,14 +5,21 @@
 import { motion, Variants } from "framer-motion";
 import { useEffect, useState } from "react";
 
+interface RippleType {
+  id: number;
+  x: number;
+  y: number;
+}
+
 interface LoadingScreenProps {
   isFirstVisit: boolean;
-  onTouch: () => void;
+  onTouch: (e: React.MouseEvent | React.TouchEvent) => void;
   waitingForTouch: boolean;
 }
 
 export default function LoadingScreen({ isFirstVisit, onTouch, waitingForTouch }: LoadingScreenProps) {
   const [randomHex, setRandomHex] = useState("0x0000");
+  const [ripples, setRipples] = useState<RippleType[]>([]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -20,6 +27,34 @@ export default function LoadingScreen({ isFirstVisit, onTouch, waitingForTouch }
     }, 120);
     return () => clearInterval(interval);
   }, []);
+
+  // リップルエフェクトを追加する関数
+  const handleInteraction = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!waitingForTouch) return;
+
+    let x: number, y: number;
+    if ('touches' in e) {
+      x = e.touches[0].clientX;
+      y = e.touches[0].clientY;
+    } else {
+      x = e.clientX;
+      y = e.clientY;
+    }
+
+    const newRipple: RippleType = {
+      id: Date.now(),
+      x,
+      y,
+    };
+    setRipples((prev) => [...prev, newRipple]);
+
+    // リップルアニメーション後に削除
+    setTimeout(() => {
+      setRipples((prev) => prev.filter((r) => r.id !== newRipple.id));
+    }, 1000);
+
+    onTouch(e);
+  };
 
   // 💡 型を「: Variants」と指定し、easeの配列エラーを解消しました
   const glitchVariants: Variants = {
@@ -51,11 +86,48 @@ export default function LoadingScreen({ isFirstVisit, onTouch, waitingForTouch }
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.6, ease: "easeInOut" }}
-      onClick={waitingForTouch ? onTouch : undefined}
-      onTouchStart={waitingForTouch ? onTouch : undefined}
+      onClick={waitingForTouch ? handleInteraction : undefined}
+      onTouchStart={waitingForTouch ? handleInteraction : undefined}
     >
       {/* 画面全体のスキャンライン */}
       <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%)] bg-[length:100%_4px] opacity-30" />
+
+      {/* リップルエフェクト */}
+      {ripples.map((ripple) => (
+        <motion.div
+          key={ripple.id}
+          className="absolute pointer-events-none"
+          style={{ left: ripple.x, top: ripple.y }}
+          initial={{ opacity: 0.8 }}
+          animate={{ opacity: 0 }}
+          transition={{ duration: 1, ease: "easeOut" }}
+        >
+          {/* 複数の波紋リング */}
+          {[0, 1, 2].map((i) => (
+            <motion.div
+              key={i}
+              className="absolute rounded-full border border-white/40"
+              style={{ 
+                left: '50%', 
+                top: '50%', 
+                translateX: '-50%', 
+                translateY: '-50%' 
+              }}
+              initial={{ width: 0, height: 0, opacity: 0.6 }}
+              animate={{ 
+                width: 300 + i * 100, 
+                height: 300 + i * 100, 
+                opacity: 0 
+              }}
+              transition={{ 
+                duration: 0.8 + i * 0.2, 
+                ease: "easeOut", 
+                delay: i * 0.1 
+              }}
+            />
+          ))}
+        </motion.div>
+      ))}
 
       {/* 画面の4隅を使った機材風UI */}
       <div className="absolute top-6 left-6 flex flex-col text-[10px] text-neutral-500 tracking-wider">
