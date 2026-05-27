@@ -5,7 +5,13 @@
 import { motion, Variants } from "framer-motion";
 import { useEffect, useState } from "react";
 
-export default function LoadingScreen() {
+interface LoadingScreenProps {
+  isFirstVisit: boolean;
+  onTouch: () => void;
+  waitingForTouch: boolean;
+}
+
+export default function LoadingScreen({ isFirstVisit, onTouch, waitingForTouch }: LoadingScreenProps) {
   const [randomHex, setRandomHex] = useState("0x0000");
 
   useEffect(() => {
@@ -40,11 +46,13 @@ export default function LoadingScreen() {
 
   return (
     <motion.div
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black overflow-hidden select-none font-mono"
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black overflow-hidden select-none font-mono cursor-pointer"
       initial={{ opacity: 1 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.6, ease: "easeInOut" }}
+      onClick={waitingForTouch ? onTouch : undefined}
+      onTouchStart={waitingForTouch ? onTouch : undefined}
     >
       {/* 画面全体のスキャンライン */}
       <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%)] bg-[length:100%_4px] opacity-30" />
@@ -119,6 +127,20 @@ export default function LoadingScreen() {
         animate={{ width: "100%" }}
         transition={{ duration: 2.5, ease: "easeInOut" }}
       />
+
+      {/* タッチ促進メッセージ（初回訪問でタッチ待機中のみ表示） */}
+      {isFirstVisit && waitingForTouch && (
+        <motion.div
+          className="absolute bottom-20 left-1/2 -translate-x-1/2 text-center"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: [0.4, 1, 0.4] }}
+          transition={{ duration: 2, ease: "easeInOut", repeat: Infinity }}
+        >
+          <span className="text-xs text-neutral-400 tracking-[0.3em] uppercase">
+            Tap anywhere to start
+          </span>
+        </motion.div>
+      )}
     </motion.div>
   );
 }
