@@ -130,16 +130,18 @@ export default function ClientLayoutWrapper({
                 </motion.svg>
               </div>
               
-              {/* 右のギザギザ機械羽 */}
+                           {/* 右のギザギザ機械羽 */}
               <div className="fixed inset-y-0 right-0 w-1/2 z-50 overflow-hidden pointer-events-none">
                 <motion.svg
+                  key="wing-r"
                   viewBox="0 0 450 900"
                   className="absolute left-0 h-full w-auto"
-                  style={{ transform: "scaleX(-1)" }} // 反転して左右対称に
-                  initial={{ x: "100%", scaleY: 0.7 }}
+                  // 💡 initial と animate の両方に「scaleX(-1)」を入れ、アニメーション中も常に反転（シンメトリー）させます
+                  initial={{ x: "100%", scaleY: 0.7, scaleX: -1 }}
                   animate={{ 
                     x: ["0%", "0%", "120%"],
-                    scaleY: [1, 1.05, 0.95]
+                    scaleY: [1, 1.05, 0.95],
+                    scaleX: [-1, -1.05, -0.95] // 縦のバウンドに合わせて横も反転を維持
                   }}
                   transition={{ 
                     duration: 1.4, 
@@ -147,6 +149,7 @@ export default function ClientLayoutWrapper({
                     ease: [0.16, 1, 0.3, 1]
                   }}
                 >
+
                   <path
                     d="M450,50 
                        L320,180 L380,210 
