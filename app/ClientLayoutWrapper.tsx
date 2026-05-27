@@ -81,128 +81,147 @@ export default function ClientLayoutWrapper({
           />
           
           {/* 天使の羽トランジション（初回のみ） */}
+                    {/* 進化したサイバー・エンジェルウィング・トランジション */}
           {showWingsTransition && (
             <>
-              {/* 左の羽 */}
-              <motion.div
-                className="fixed inset-y-0 left-0 w-1/2 z-[60] overflow-hidden"
-                initial={{ x: "-100%" }}
-                animate={{ x: ["0%", "0%", "-100%"] }}
-                transition={{ 
-                  duration: 1.5, 
-                  times: [0, 0.4, 1],
-                  ease: "easeInOut" 
-                }}
-              >
-                <svg
-                  viewBox="0 0 400 800"
-                  className="absolute right-0 h-full w-auto"
-                  style={{ transform: "translateX(30%)" }}
-                >
-                  <defs>
-                    <linearGradient id="wingGradientLeft" x1="0%" y1="0%" x2="100%" y2="0%">
-                      <stop offset="0%" stopColor="#0a0a0a" />
-                      <stop offset="70%" stopColor="#1a1a1a" />
-                      <stop offset="100%" stopColor="#2a2a2a" />
-                    </linearGradient>
-                    <filter id="featherGlow">
-                      <feGaussianBlur stdDeviation="2" result="glow" />
-                      <feMerge>
-                        <feMergeNode in="glow" />
-                        <feMergeNode in="SourceGraphic" />
-                      </feMerge>
-                    </filter>
-                  </defs>
-                  
-                  <path
-                    d="M400,0 L400,800 L350,800 Q300,700 280,600 Q250,500 200,400 Q150,300 100,250 Q50,200 0,180 Q50,160 100,150 Q150,140 200,100 Q250,60 300,30 Q350,10 400,0 Z"
-                    fill="url(#wingGradientLeft)"
-                  />
-                  
-                  {[...Array(12)].map((_, i) => (
-                    <motion.path
-                      key={i}
-                      d={`M400,${50 + i * 60} Q${300 - i * 15},${100 + i * 50} ${100 - i * 8},${150 + i * 30}`}
-                      stroke="rgba(255,255,255,0.08)"
-                      strokeWidth="1"
-                      fill="none"
-                      initial={{ pathLength: 0, opacity: 0 }}
-                      animate={{ pathLength: 1, opacity: 1 }}
-                      transition={{ duration: 0.5, delay: i * 0.05 }}
+              {/* 左の多層の羽 */}
+              <div className="fixed inset-y-0 left-0 w-1/2 z-[60] overflow-hidden pointer-events-none">
+                {[...Array(3)].map((_, layerIndex) => (
+                  <motion.svg
+                    key={`wing-l-${layerIndex}`}
+                    viewBox="0 0 450 900"
+                    className="absolute right-0 h-full w-auto filter drop-shadow-[0_0_15px_rgba(16,185,129,0.2)]"
+                    style={{ 
+                      transform: "translateX(25%)",
+                      mixBlendMode: layerIndex === 2 ? "screen" : "normal"
+                    }}
+                    initial={{ x: "-120%", rotate: -15, scale: 0.8 }}
+                    animate={{ 
+                      x: ["0%", "0%", "-150%"],
+                      rotate: [0, -5, -25],
+                      scale: [1, 1.05, 0.9]
+                    }}
+                    transition={{ 
+                      duration: 1.8, 
+                      times: [0, 0.45, 1],
+                      ease: [0.25, 1, 0.5, 1],
+                      delay: layerIndex * 0.08 // 時間差で重なって展開
+                    }}
+                  >
+                    <defs>
+                      <linearGradient id={`wingGradL-${layerIndex}`} x1="0%" y1="50%" x2="100%" y2="50%">
+                        <stop offset="0%" stopColor="#030303" />
+                        <stop offset="60%" stopColor={layerIndex === 2 ? "#111" : "#0a0a0a"} />
+                        <stop offset="95%" stopColor={layerIndex === 2 ? "#10b981" : layerIndex === 1 ? "#ff0055" : "#262626"} />
+                        <stop offset="100%" stopColor="#ffffff" />
+                      </linearGradient>
+                      <filter id="cyberGlowL">
+                        <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+                        <feMerge>
+                          <feMergeNode in="coloredBlur"/>
+                          <feMergeNode in="SourceGraphic"/>
+                        </feMerge>
+                      </filter>
+                    </defs>
+                    
+                    {/* 精細化したアブストラクトな羽のパス */}
+                    <path
+                      d="M450,0 C420,50 310,80 260,140 C200,210 120,320 60,420 C10,500 0,560 30,590 C70,630 180,560 250,520 C320,480 390,400 450,320 Z
+                         M450,250 C400,320 280,390 200,470 C130,540 70,660 40,760 C20,820 30,850 60,850 C110,850 220,720 310,610 C380,520 430,420 450,350 Z"
+                      fill={`url(#wingGradL-${layerIndex})`}
+                      opacity={layerIndex === 2 ? 0.9 : 1}
                     />
-                  ))}
-                  
-                  <path
-                    d="M400,0 Q350,10 300,30 Q250,60 200,100 Q150,140 100,150 Q50,160 0,180"
-                    stroke="rgba(255,255,255,0.15)"
-                    strokeWidth="2"
-                    fill="none"
-                    filter="url(#featherGlow)"
-                  />
-                </svg>
-              </motion.div>
+                    
+                    {/* サイバーグリッド・フェザーライン */}
+                    {[...Array(18)].map((_, i) => (
+                      <motion.path
+                        key={i}
+                        d={`M450,${30 + i * 45} Q${320 - i * 12},${120 + i * 35} ${50 + i * 15},${200 + i * 25}`}
+                        stroke={layerIndex === 2 ? "rgba(16,185,121,0.4)" : "rgba(255,255,255,0.06)"}
+                        strokeWidth={layerIndex === 2 ? "1.5" : "1"}
+                        fill="none"
+                        initial={{ pathLength: 0, opacity: 0 }}
+                        animate={{ pathLength: [0, 1, 1], opacity: [0, 0.8, 0] }}
+                        transition={{ duration: 1.4, times: [0, 0.4, 1], delay: layerIndex * 0.1 + i * 0.02 }}
+                      />
+                    ))}
+                  </motion.svg>
+                ))}
+              </div>
               
-              {/* 右の羽 */}
-              <motion.div
-                className="fixed inset-y-0 right-0 w-1/2 z-[60] overflow-hidden"
-                initial={{ x: "100%" }}
-                animate={{ x: ["0%", "0%", "100%"] }}
+              {/* 右の多層の羽 */}
+              <div className="fixed inset-y-0 right-0 w-1/2 z-[60] overflow-hidden pointer-events-none">
+                {[...Array(3)].map((_, layerIndex) => (
+                  <motion.svg
+                    key={`wing-r-${layerIndex}`}
+                    viewBox="0 0 450 900"
+                    className="absolute left-0 h-full w-auto filter drop-shadow-[0_0_15px_rgba(255,0,85,0.2)]"
+                    style={{ 
+                      transform: "translateX(-25%) scaleX(-1)",
+                      mixBlendMode: layerIndex === 2 ? "screen" : "normal"
+                    }}
+                    initial={{ x: "120%", rotate: 15, scale: 0.8 }}
+                    animate={{ 
+                      x: ["0%", "0%", "150%"],
+                      rotate: [0, 5, 25],
+                      scale: [1, 1.05, 0.9]
+                    }}
+                    transition={{ 
+                      duration: 1.8, 
+                      times: [0, 0.45, 1],
+                      ease: [0.25, 1, 0.5, 1],
+                      delay: layerIndex * 0.08
+                    }}
+                  >
+                    <defs>
+                      <linearGradient id={`wingGradR-${layerIndex}`} x1="0%" y1="50%" x2="100%" y2="50%">
+                        <stop offset="0%" stopColor="#030303" />
+                        <stop offset="60%" stopColor={layerIndex === 2 ? "#111" : "#0a0a0a"} />
+                        <stop offset="95%" stopColor={layerIndex === 2 ? "#ff0055" : layerIndex === 1 ? "#10b981" : "#262626"} />
+                        <stop offset="100%" stopColor="#ffffff" />
+                      </linearGradient>
+                    </defs>
+                    
+                    <path
+                      d="M450,0 C420,50 310,80 260,140 C200,210 120,320 60,420 C10,500 0,560 30,590 C70,630 180,560 250,520 C320,480 390,400 450,320 Z
+                         M450,250 C400,320 280,390 200,470 C130,540 70,660 40,760 C20,820 30,850 60,850 C110,850 220,720 310,610 C380,520 430,420 450,350 Z"
+                      fill={`url(#wingGradR-${layerIndex})`}
+                      opacity={layerIndex === 2 ? 0.9 : 1}
+                    />
+                    
+                    {[...Array(18)].map((_, i) => (
+                      <motion.path
+                        key={i}
+                        d={`M450,${30 + i * 45} Q${320 - i * 12},${120 + i * 35} ${50 + i * 15},${200 + i * 25}`}
+                        stroke={layerIndex === 2 ? "rgba(255,0,85,0.4)" : "rgba(255,255,255,0.06)"}
+                        strokeWidth={layerIndex === 2 ? "1.5" : "1"}
+                        fill="none"
+                        initial={{ pathLength: 0, opacity: 0 }}
+                        animate={{ pathLength: [0, 1, 1], opacity: [0, 0.8, 0] }}
+                        transition={{ duration: 1.4, times: [0, 0.4, 1], delay: layerIndex * 0.1 + i * 0.02 }}
+                      />
+                    ))}
+                  </motion.svg>
+                ))}
+              </div>
+
+              {/* 空間全体を切り裂くグリッチフラッシュエフェクト */}
+              <motion.div 
+                className="fixed inset-0 z-[70] pointer-events-none"
+                initial={{ opacity: 0, backgroundColor: "#ffffff" }}
+                animate={{ 
+                  opacity: [0, 1, 0.3, 0.8, 0],
+                  backgroundColor: ["#ffffff", "#10b981", "#ff0055", "#ffffff", "#ffffff"]
+                }}
                 transition={{ 
-                  duration: 1.5, 
-                  times: [0, 0.4, 1],
+                  duration: 0.6, 
+                  times: [0, 0.1, 0.25, 0.4, 1],
                   ease: "easeInOut" 
                 }}
-              >
-                <svg
-                  viewBox="0 0 400 800"
-                  className="absolute left-0 h-full w-auto"
-                  style={{ transform: "translateX(-30%) scaleX(-1)" }}
-                >
-                  <defs>
-                    <linearGradient id="wingGradientRight" x1="0%" y1="0%" x2="100%" y2="0%">
-                      <stop offset="0%" stopColor="#0a0a0a" />
-                      <stop offset="70%" stopColor="#1a1a1a" />
-                      <stop offset="100%" stopColor="#2a2a2a" />
-                    </linearGradient>
-                  </defs>
-                  
-                  <path
-                    d="M400,0 L400,800 L350,800 Q300,700 280,600 Q250,500 200,400 Q150,300 100,250 Q50,200 0,180 Q50,160 100,150 Q150,140 200,100 Q250,60 300,30 Q350,10 400,0 Z"
-                    fill="url(#wingGradientRight)"
-                  />
-                  
-                  {[...Array(12)].map((_, i) => (
-                    <motion.path
-                      key={i}
-                      d={`M400,${50 + i * 60} Q${300 - i * 15},${100 + i * 50} ${100 - i * 8},${150 + i * 30}`}
-                      stroke="rgba(255,255,255,0.08)"
-                      strokeWidth="1"
-                      fill="none"
-                      initial={{ pathLength: 0, opacity: 0 }}
-                      animate={{ pathLength: 1, opacity: 1 }}
-                      transition={{ duration: 0.5, delay: i * 0.05 }}
-                    />
-                  ))}
-                  
-                  <path
-                    d="M400,0 Q350,10 300,30 Q250,60 200,100 Q150,140 100,150 Q50,160 0,180"
-                    stroke="rgba(255,255,255,0.15)"
-                    strokeWidth="2"
-                    fill="none"
-                    filter="url(#featherGlow)"
-                  />
-                </svg>
-              </motion.div>
-
-              {/* 中央の光エフェクト */}
-              <motion.div 
-                className="fixed inset-0 bg-white z-[55] pointer-events-none"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: [0, 1, 0] }}
-                transition={{ duration: 1.5, times: [0, 0.4, 1], ease: "easeInOut" }}
               />
             </>
           )}
+
         </>
       ) : (
         <motion.div
