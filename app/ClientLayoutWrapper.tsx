@@ -40,27 +40,48 @@ export default function ClientLayoutWrapper({
   }, []);
 
     // 💡 音声をタッチ直後に最速で鳴らすように修正
+  // 💡 音声のリアルタイムな再生開始を検知してアニメーションを動かす
   const handleTouch = () => {
     if (!waitingForTouch) return;
     setWaitingForTouch(false);
     
-    // 1. 【最速】タッチされたまさにその瞬間に音声を即座に再生！
     if (startupAudioRef.current) {
-      startupAudioRef.current.play().catch((err) => console.log(err));
+      const audio = startupAudioRef.current;
+
+      // 1. 音声が実際に再生開始され、再生時間が動き出した瞬間を監視するイベント
+      const onAudioStart = () => {
+        // 💡 音が鳴り始めたら、200ms（0.2秒）後に羽の展開と文字切り替えをスタート！
+        setTimeout(() => {
+          setShowWingsTransition(true);
+          setChangeToWelcome(true);
+          
+          // さらに1.2秒後に画面をフェードアウトしてメニューへ
+          setTimeout(() => {
+            setIsLoading(false);
+            sessionStorage.setItem("hasVisitedInsert", "true");
+          }, 1200);
+        }, 200);
+
+        // イベントが何度も実行されないように一度実行したら削除する
+        audio.removeEventListener("timeupdate", onAudioStart);
+      };
+
+      audio.addEventListener("timeupdate", onAudioStart);
+
+      // 2. タッチの瞬間に最速で再生命令を出す
+      audio.play().catch((err) => {
+        console.log(err);
+        // 万が一ブラウザに再生をブロックされた場合のセーフティ（即座にアニメーションを動かす）
+        setShowWingsTransition(true);
+        setChangeToWelcome(true);
+        setTimeout(() => {
+          setIsLoading(false);
+          sessionStorage.setItem("hasVisitedInsert", "true");
+        }, 1200);
+      });
     }
-    
-    // 2. 音が鳴った0.2秒後（200ms後）に機械羽を展開して文字を切り替える
-    setTimeout(() => {
-      setShowWingsTransition(true);
-      setChangeToWelcome(true);
-      
-      // 3. さらに1.2秒後に画面をフェードアウトしてメニューへ
-      setTimeout(() => {
-        setIsLoading(false);
-        sessionStorage.setItem("hasVisitedInsert", "true");
-      }, 1200);
-    }, 200);
   };
+
 
 
   return (
