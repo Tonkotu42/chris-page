@@ -39,26 +39,29 @@ export default function ClientLayoutWrapper({
     }
   }, []);
 
+    // 💡 音声をタッチ直後に最速で鳴らすように修正
   const handleTouch = () => {
     if (!waitingForTouch) return;
     setWaitingForTouch(false);
     
+    // 1. 【最速】タッチされたまさにその瞬間に音声を即座に再生！
     if (startupAudioRef.current) {
       startupAudioRef.current.play().catch((err) => console.log(err));
     }
     
-    // 💡 タッチされてから0.2秒後に羽を展開し、同時に中央の文字をWELCOME BACKにする
+    // 2. 音が鳴った0.2秒後（200ms後）に機械羽を展開して文字を切り替える
     setTimeout(() => {
       setShowWingsTransition(true);
-      setChangeToWelcome(true); // 💡 ここで文字を切り替える指示を出す！
+      setChangeToWelcome(true);
       
-      // 羽が開いて文字を見せたあと、1.2秒後に画面をフェードアウトしてメニューへ
+      // 3. さらに1.2秒後に画面をフェードアウトしてメニューへ
       setTimeout(() => {
         setIsLoading(false);
         sessionStorage.setItem("hasVisitedInsert", "true");
       }, 1200);
     }, 200);
   };
+
 
   return (
     <AnimatePresence mode="wait">
