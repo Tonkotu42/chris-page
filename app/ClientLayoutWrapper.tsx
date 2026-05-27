@@ -98,53 +98,58 @@ export default function ClientLayoutWrapper({
           
           {/* シンメトリー機械羽 */}
           {showWingsTransition && (
-            <>
-              {/* 左の機械羽 */}
-              <div className="fixed inset-y-0 left-0 w-1/2 z-50 overflow-hidden pointer-events-none">
-                <motion.svg
-                  viewBox="0 0 450 900"
-                  className="absolute right-0 h-full w-auto"
-                  initial={{ x: "-100%", scaleY: 0.7 }}
-                  animate={{ 
-                    x: ["0%", "0%", "-120%"],
-                    scaleY: [1, 1.05, 0.95]
-                  }}
-                  transition={{ duration: 1.4, times: [0, 0.45, 1], ease: [0.16, 1, 0.3, 1] }}
-                >
-                  <path
-                    d="M450,50 L320,180 L380,210 L240,320 L310,350 L140,480 L220,510 L60,650 L150,670 L0,800 L450,700 Z"
-                    fill="#000000"
-                    stroke="#ffffff"
-                    strokeWidth="3"
-                    strokeLinejoin="miter"
-                  />
-                </motion.svg>
-              </div>
-              
-              {/* 右の機械羽（完全シンメトリー） */}
-              <div className="fixed inset-y-0 right-0 w-1/2 z-50 overflow-hidden pointer-events-none">
-                <motion.svg
-                  viewBox="0 0 450 900"
-                  className="absolute left-0 h-full w-auto"
-                  initial={{ x: "100%", scaleY: 0.7, scaleX: -1 }}
-                  animate={{ 
-                    x: ["0%", "0%", "120%"],
-                    scaleY: [1, 1.05, 0.95],
-                    scaleX: [-1, -1.05, -0.95]
-                  }}
-                  transition={{ duration: 1.4, times: [0, 0.45, 1], ease: [0.16, 1, 0.3, 1] }}
-                >
-                  <path
-                    d="M450,50 L320,180 L380,210 L240,320 L310,350 L140,480 L220,510 L60,650 L150,670 L0,800 L450,700 Z"
-                    fill="#000000"
-                    stroke="#ffffff"
-                    strokeWidth="3"
-                    strokeLinejoin="miter"
-                  />
-                </motion.svg>
-              </div>
-            </>
-          )}
+  <>
+    {/* 左の機械羽（上下逆転） */}
+    <div className="fixed inset-y-0 left-0 w-1/2 z-50 overflow-hidden pointer-events-none">
+      <motion.svg
+        viewBox="0 0 450 900"
+        className="absolute right-0 h-full w-auto"
+        // scaleYの初期値をマイナスにして上下反転
+        initial={{ x: "-100%", scaleY: -0.7 }}
+        animate={{ 
+          x: ["0%", "0%", "-120%"],
+          // アニメーション中のscaleYもすべてマイナス値に変更
+          scaleY: [-1, -1.05, -0.95]
+        }}
+        transition={{ duration: 1.4, times: [0, 0.45, 1], ease: [0.16, 1, 0.3, 1] }}
+      >
+        <path
+          d="M450,50 L320,180 L380,210 L240,320 L310,350 L140,480 L220,510 L60,650 L150,670 L0,800 L450,700 Z"
+          fill="#000000"
+          stroke="#ffffff"
+          strokeWidth="3"
+          strokeLinejoin="miter"
+        />
+      </motion.svg>
+    </div>
+    
+    {/* 右の機械羽（完全シンメトリー ＆ 上下逆転） */}
+    <div className="fixed inset-y-0 right-0 w-1/2 z-50 overflow-hidden pointer-events-none">
+      <motion.svg
+        viewBox="0 0 450 900"
+        className="absolute left-0 h-full w-auto"
+        // scaleYをマイナスにして上下反転
+        initial={{ x: "100%", scaleY: -0.7, scaleX: -1 }}
+        animate={{ 
+          x: ["0%", "0%", "120%"],
+          // アニメーション中のscaleYをすべてマイナス値に変更
+          scaleY: [-1, -1.05, -0.95],
+          scaleX: [-1, -1.05, -0.95]
+        }}
+        transition={{ duration: 1.4, times: [0, 0.45, 1], ease: [0.16, 1, 0.3, 1] }}
+      >
+        <path
+          d="M450,50 L320,180 L380,210 L240,320 L310,350 L140,480 L220,510 L60,650 L150,670 L0,800 L450,700 Z"
+          fill="#000000"
+          stroke="#ffffff"
+          strokeWidth="3"
+          strokeLinejoin="miter"
+        />
+      </motion.svg>
+    </div>
+  </>
+)}
+
         </>
       ) : (
         <motion.div
