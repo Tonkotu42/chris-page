@@ -71,7 +71,7 @@ export default function LoadingScreen() {
       </div>
 
       <div className="absolute bottom-8 right-6 text-[10px] text-neutral-400 tracking-widest">
-        <span>© SONY STYLE</span>
+        <span>© GANG CAT RECORDS</span>
       </div>
 
       {/* 中央のカメラ風照準フレーム */}
@@ -89,7 +89,7 @@ export default function LoadingScreen() {
           variants={glitchVariants}
           animate="animate"
         >
-          SONY STYLE PORTFOLIO
+          GANG CAT RECORDS
         </motion.div>
 
         <motion.h1
@@ -99,7 +99,7 @@ export default function LoadingScreen() {
           transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1], delay: 0.2 }}
         >
           <motion.span className="inline-block" variants={glitchVariants} animate="animate">
-            SONY STYLE PORTFOLIO
+            GANG CAT RECORDS
           </motion.span>
         </motion.h1>
       </div>
