@@ -1,11 +1,8 @@
 // app/loading.tsx
-import LoadingScreen from "./LoadingScreen"; // 既存のコンポーネントを読み込む場合
+import LoadingScreen from "./LoadingScreen";
 
 export default function Loading() {
-  const handleComplete = () => {
-    console.log("読み込み完了");
-  };
-
-  return <LoadingScreen onComplete={handleComplete} />;
+  // 💡 ここから onComplete={() => {}} を削除します
+  return <LoadingScreen />;
 }
 

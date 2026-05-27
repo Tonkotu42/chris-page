@@ -10,46 +10,48 @@ export default function ClientLayoutWrapper({
 }: {
   children: React.ReactNode;
 }) {
-  // 💡 チラつき防止のため、初期値は false（ローディングなし）にしておく
-  const [isLoading, setIsLoading] = useState(false);
-  // 💡 ハイドレーションエラーを防ぐためのマウント状態管理
-  const [isMounted, setIsMounted] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    setIsMounted(true);
+    // 過去にアクセスしたことがあるかフラグを確認
+    const hasVisited = sessionStorage.getItem("hasVisitedInsert");
+    
+    // 初回は3000ms（3秒）、2回目以降（再読み込み）は1000ms（1秒）に短縮
+    const loadingDuration = hasVisited ? 1000 : 3000;
 
-    // セッションストレージを確認
-    const hasVisited = sessionStorage.getItem("hasVisitedBefore");
+    // 起動音の処理
+    const audio = new Audio("/audio/startup.mp3");
+    audio.volume = 0.5;
 
     if (!hasVisited) {
-      // 【初回起動時のみ】ローディングを有効にし、フラグを保存
-      setIsLoading(true);
-      sessionStorage.setItem("hasVisitedBefore", "true");
-
-      // 3秒後にローディングを終了
-      const timer = setTimeout(() => {
-        setIsLoading(false);
-      }, 3000);
-
-      return () => clearTimeout(timer);
+      audio.play().catch((error) => {
+        console.log("自動再生ブロック:", error);
+      });
     }
-  }, []);
 
-  // 💡 サーバーサイドレンダリング時はコンテンツのみを返してエラーを防ぐ
-  if (!isMounted) {
-    return <div className="flex-1 flex flex-col">{children}</div>;
-  }
+    // タイマーをセット
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+      // アクセス済みフラグをセッションに保存（タブを閉じるまで有効）
+      sessionStorage.setItem("hasVisitedInsert", "true");
+    }, loadingDuration);
+
+    return () => {
+      clearTimeout(timer);
+      audio.pause();
+    };
+  }, []);
 
   return (
     <AnimatePresence mode="wait">
       {isLoading ? (
-        <LoadingScreen key="loader" onComplete={() => {}} />
+        // 💡 ここから「onComplete」を完全に削除しました
+        <LoadingScreen key="loader" />
       ) : (
         <motion.div
           key="content"
           className="flex-1 flex flex-col"
-          // 💡 リロード時はアニメーション（initial）をスキップして即座に表示させる
-          initial={sessionStorage.getItem("hasVisitedBefore") ? false : { opacity: 0, y: 10 }}
+          initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: "easeOut" }}
         >
