@@ -24,7 +24,7 @@ export default function ClientLayoutWrapper({
       setIsFirstVisit(true);
       setWaitingForTouch(true);
       // 音声を準備・プリロード
-      const audio = new Audio("/audio/startup.wav");
+      const audio = new Audio("/audio/startup.ogg");
       audio.volume = 0.5;
       audio.preload = "auto";
       // 音声データを事前に読み込む
