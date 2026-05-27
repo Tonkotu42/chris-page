@@ -1,7 +1,6 @@
 // app/LoadingScreen.tsx
 "use client";
 
-// 💡 「Variants」という型をインポートに追加しました
 import { motion, Variants } from "framer-motion";
 import { useEffect, useState } from "react";
 
@@ -11,14 +10,20 @@ interface RippleType {
   y: number;
 }
 
-// 💡 refresh-animation ブランチ側の高機能な Props 定義を採用します
 interface LoadingScreenProps {
   isFirstVisit: boolean;
   onTouch: (e: React.MouseEvent | React.TouchEvent) => void;
   waitingForTouch: boolean;
+  // 💡 追加：テキストをWELCOME BACKに切り替えるフラグ
+  changeToWelcome?: boolean;
 }
 
-export default function LoadingScreen({ isFirstVisit, onTouch, waitingForTouch }: LoadingScreenProps) {
+export default function LoadingScreen({ 
+  isFirstVisit, 
+  onTouch, 
+  waitingForTouch,
+  changeToWelcome = false // デフォルトは通常ロゴ
+}: LoadingScreenProps) {
   const [randomHex, setRandomHex] = useState("0x0000");
   const [ripples, setRipples] = useState<RippleType[]>([]);
 
@@ -29,7 +34,6 @@ export default function LoadingScreen({ isFirstVisit, onTouch, waitingForTouch }
     return () => clearInterval(interval);
   }, []);
 
-  // リップルエフェクトを追加する関数
   const handleInteraction = (e: React.MouseEvent | React.TouchEvent) => {
     if (!waitingForTouch) return;
 
@@ -42,14 +46,9 @@ export default function LoadingScreen({ isFirstVisit, onTouch, waitingForTouch }
       y = e.clientY;
     }
 
-    const newRipple: RippleType = {
-      id: Date.now(),
-      x,
-      y,
-    };
+    const newRipple: RippleType = { id: Date.now(), x, y };
     setRipples((prev) => [...prev, newRipple]);
 
-    // リップルアニメーション後に削除
     setTimeout(() => {
       setRipples((prev) => prev.filter((r) => r.id !== newRipple.id));
     }, 1000);
@@ -57,7 +56,6 @@ export default function LoadingScreen({ isFirstVisit, onTouch, waitingForTouch }
     onTouch(e);
   };
 
-  // 💡 型を「: Variants」と指定し、easeの配列エラーを解消しました
   const glitchVariants: Variants = {
     animate: {
       x: [0, -3, 3, -1, 2, 0],
@@ -71,7 +69,6 @@ export default function LoadingScreen({ isFirstVisit, onTouch, waitingForTouch }
       ],
       transition: {
         duration: 0.4,
-        // イージングを固定値に修正して型エラーを完全に解消
         ease: "linear",
         times: [0, 0.1, 0.2, 0.4, 0.6, 1],
         repeat: Infinity,
@@ -79,6 +76,9 @@ export default function LoadingScreen({ isFirstVisit, onTouch, waitingForTouch }
       }
     }
   };
+
+  // 💡 フラグによって表示する文字を決定
+  const mainText = changeToWelcome ? "WELCOME BACK" : "GANG CAT RECORDS";
 
   return (
     <motion.div
@@ -90,10 +90,8 @@ export default function LoadingScreen({ isFirstVisit, onTouch, waitingForTouch }
       onClick={waitingForTouch ? handleInteraction : undefined}
       onTouchStart={waitingForTouch ? handleInteraction : undefined}
     >
-      {/* 画面全体のスキャンライン */}
       <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%)] bg-[length:100%_4px] opacity-30" />
 
-      {/* リップルエフェクト */}
       {ripples.map((ripple) => (
         <motion.div
           key={ripple.id}
@@ -103,40 +101,22 @@ export default function LoadingScreen({ isFirstVisit, onTouch, waitingForTouch }
           animate={{ opacity: 0 }}
           transition={{ duration: 1, ease: "easeOut" }}
         >
-          {/* 複数の波紋リング */}
           {[0, 1, 2].map((i) => (
             <motion.div
               key={i}
               className="absolute rounded-full border border-white/40"
-              style={{ 
-                left: '50%', 
-                top: '50%', 
-                translateX: '-50%', 
-                translateY: '-50%' 
-              }}
+              style={{ left: '50%', top: '50%', translateX: '-50%', translateY: '-50%' }}
               initial={{ width: 0, height: 0, opacity: 0.6 }}
-              animate={{ 
-                width: 300 + i * 100, 
-                height: 300 + i * 100, 
-                opacity: 0 
-              }}
-              transition={{ 
-                duration: 0.8 + i * 0.2, 
-                ease: "easeOut", 
-                delay: i * 0.1 
-              }}
+              animate={{ width: 300 + i * 100, height: 300 + i * 100, opacity: 0 }}
+              transition={{ duration: 0.8 + i * 0.2, ease: "easeOut", delay: i * 0.1 }}
             />
           ))}
         </motion.div>
       ))}
 
-      {/* 画面の4隅を使った機材風UI */}
       <div className="absolute top-6 left-6 flex flex-col text-[10px] text-neutral-500 tracking-wider">
         <span className="text-neutral-400 font-bold">SYS_STATUS: RUNNING</span>
-        {/* 💡 isFirstVisit が true（初回訪問）のときだけ、特別なテキストを表示する演出例です */}
-        <span>
-          BOOT_SEQ: {isFirstVisit ? "INITIAL_LAUNCH" : "RE_INITIALIZED"}
-        </span>
+        <span>BOOT_SEQ: {isFirstVisit ? "INITIAL_LAUNCH" : "RE_INITIALIZED"}</span>
       </div>
 
       <div className="absolute top-6 right-6 flex items-center gap-2 text-[10px] text-neutral-500">
@@ -155,11 +135,9 @@ export default function LoadingScreen({ isFirstVisit, onTouch, waitingForTouch }
       </div>
 
       <div className="absolute bottom-8 right-6 text-[10px] text-neutral-400 tracking-widest">
-        {/* 💡 ©マークが付いているほうを採用します */}
         <span>© GANG CAT RECORDS</span>
       </div>
 
-      {/* 中央のカメラ風照準フレーム */}
       <div className="absolute w-[440px] h-[220px] max-w-[85vw] max-h-[30vh] pointer-events-none opacity-20 border border-neutral-800">
         <div className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-white -mt-[2px] -ml-[2px]" />
         <div className="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-white -mt-[2px] -mr-[2px]" />
@@ -167,29 +145,29 @@ export default function LoadingScreen({ isFirstVisit, onTouch, waitingForTouch }
         <div className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-white -mb-[2px] -mr-[2px]" />
       </div>
 
-      {/* 中央のメインロゴ */}
+      {/* 中央のメインロゴ（切り替え対応版） */}
+      {/* 💡 keyにmainTextを指定することで、文字が変わった瞬間にFramer Motionが検知して一瞬グリッチが入るようになります */}
       <div className="relative overflow-hidden p-8 z-10">
         <motion.div
+          key={`bg-${mainText}`}
           className="absolute inset-0 flex items-center justify-center text-sm font-inter tracking-[0.4em] text-neutral-800 uppercase font-bold blur-[1px] opacity-20"
           variants={glitchVariants}
           animate="animate"
         >
-          GANG CAT RECORDS
+          {mainText}
         </motion.div>
 
         <motion.h1
           className="relative text-sm font-inter tracking-[0.4em] text-white uppercase text-center font-medium"
-          initial={{ y: 15, opacity: 0, scale: 0.98 }}
-          animate={{ y: 0, opacity: 1, scale: 1 }}
-          transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1], delay: 0.2 }}
+          initial={{ y: 0, opacity: 1, scale: 1 }}
+          key={`fg-${mainText}`}
         >
           <motion.span className="inline-block" variants={glitchVariants} animate="animate">
-            GANG CAT RECORDS
+            {mainText}
           </motion.span>
         </motion.h1>
       </div>
 
-      {/* スキャンレーザー */}
       <motion.div 
         className="absolute left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-neutral-700 to-transparent opacity-40"
         initial={{ top: "-5%" }}
@@ -197,7 +175,6 @@ export default function LoadingScreen({ isFirstVisit, onTouch, waitingForTouch }
         transition={{ duration: 2.5, ease: "linear", repeat: Infinity }}
       />
 
-      {/* プログレスライン */}
       <motion.div 
         className="absolute bottom-0 left-0 h-[1px] bg-neutral-600"
         initial={{ width: "0%" }}
@@ -205,7 +182,6 @@ export default function LoadingScreen({ isFirstVisit, onTouch, waitingForTouch }
         transition={{ duration: 2.5, ease: "easeInOut" }}
       />
 
-      {/* タッチ促進メッセージ（初回訪問でタッチ待機中のみ表示） */}
       {isFirstVisit && waitingForTouch && (
         <motion.div
           className="absolute bottom-20 left-1/2 -translate-x-1/2 text-center"
@@ -221,4 +197,3 @@ export default function LoadingScreen({ isFirstVisit, onTouch, waitingForTouch }
     </motion.div>
   );
 }
-
