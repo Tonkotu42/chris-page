@@ -37,7 +37,7 @@ export default function ClientLayoutWrapper({
       setWaitingForTouch(false);
 
       // リフレッシュ専用の短い音声を生成して最速で鳴らす
-      const refreshAudio = new Audio("/audio/refresh.mp3"); // ※拡張子は.oggでも可
+      const refreshAudio = new Audio("/audio/reload.ogg"); // ※拡張子は.oggでも可
       refreshAudio.volume = 0.4; // リピート時は少し控えめの音量に
       
       refreshAudio.play().catch((err) => {
