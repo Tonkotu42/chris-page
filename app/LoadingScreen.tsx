@@ -5,7 +5,13 @@
 import { motion, Variants } from "framer-motion";
 import { useEffect, useState } from "react";
 
-export default function LoadingScreen() {
+// 💡 ClientLayoutWrapperから渡される isFirstVisit を受け取るための型定義
+interface LoadingScreenProps {
+  isFirstVisit: boolean;
+}
+
+// 💡 引数で { isFirstVisit } を受け取れるようにしました
+export default function LoadingScreen({ isFirstVisit }: LoadingScreenProps) {
   const [randomHex, setRandomHex] = useState("0x0000");
 
   useEffect(() => {
@@ -52,7 +58,10 @@ export default function LoadingScreen() {
       {/* 画面の4隅を使った機材風UI */}
       <div className="absolute top-6 left-6 flex flex-col text-[10px] text-neutral-500 tracking-wider">
         <span className="text-neutral-400 font-bold">SYS_STATUS: RUNNING</span>
-        <span>BOOT_SEQ: INITIALIZED</span>
+        {/* 💡 isFirstVisit が true（初回訪問）のときだけ、特別なテキストを表示する演出例です */}
+        <span>
+          BOOT_SEQ: {isFirstVisit ? "INITIAL_LAUNCH" : "RE_INITIALIZED"}
+        </span>
       </div>
 
       <div className="absolute top-6 right-6 flex items-center gap-2 text-[10px] text-neutral-500">
@@ -71,7 +80,7 @@ export default function LoadingScreen() {
       </div>
 
       <div className="absolute bottom-8 right-6 text-[10px] text-neutral-400 tracking-widest">
-        <span>© SONY STYLE</span>
+        <span>GANG CAT RECORDS</span>
       </div>
 
       {/* 中央のカメラ風照準フレーム */}
@@ -89,7 +98,7 @@ export default function LoadingScreen() {
           variants={glitchVariants}
           animate="animate"
         >
-          SONY STYLE PORTFOLIO
+          GANG CAT RECORDS
         </motion.div>
 
         <motion.h1
@@ -99,7 +108,7 @@ export default function LoadingScreen() {
           transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1], delay: 0.2 }}
         >
           <motion.span className="inline-block" variants={glitchVariants} animate="animate">
-            SONY STYLE PORTFOLIO
+            GANG CAT RECORDS
           </motion.span>
         </motion.h1>
       </div>

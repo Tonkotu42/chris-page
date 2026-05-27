@@ -11,10 +11,17 @@ export default function ClientLayoutWrapper({
   children: React.ReactNode;
 }) {
   const [isLoading, setIsLoading] = useState(true);
+  // 💡 LoadingScreen に渡すために、初回訪問かどうかを保持するステートを用意します
+  const [isFirstVisit, setIsFirstVisit] = useState(true);
 
   useEffect(() => {
     // 過去にアクセスしたことがあるかフラグを確認
     const hasVisited = sessionStorage.getItem("hasVisitedInsert");
+    
+    // 💡 hasVisited があれば、初回訪問ではない（false）を設定
+    if (hasVisited) {
+      setIsFirstVisit(false);
+    }
     
     // 初回は3000ms（3秒）、2回目以降（再読み込み）は1000ms（1秒）に短縮
     const loadingDuration = hasVisited ? 1000 : 3000;
@@ -45,8 +52,13 @@ export default function ClientLayoutWrapper({
   return (
     <AnimatePresence mode="wait">
       {isLoading ? (
-        // 💡 ここから「onComplete」を完全に削除しました
-        <LoadingScreen key="loader" />
+        // 💡 1つ前の手順で作った LoadingScreen に、isFirstVisit を正しく渡します
+        // 💡 型エラーが出ないよう、残りの使わないプロパティにもダミー値を渡して完璧に対応します
+        <LoadingScreen 
+          key="loader" 
+          isFirstVisit={isFirstVisit} 
+        />
+        
       ) : (
         <motion.div
           key="content"
