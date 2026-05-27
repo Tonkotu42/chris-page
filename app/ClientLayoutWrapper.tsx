@@ -205,20 +205,23 @@ export default function ClientLayoutWrapper({
                 ))}
               </div>
 
-              {/* 空間全体を切り裂くグリッチフラッシュエフェクト */}
+             
+              {/* 爆速化したスリットフラッシュエフェクト */}
               <motion.div 
-                className="fixed inset-0 z-[70] pointer-events-none"
+                className="fixed inset-0 z-[70] pointer-events-none mix-blend-overlay"
                 initial={{ opacity: 0, backgroundColor: "#ffffff" }}
                 animate={{ 
-                  opacity: [0, 1, 0.3, 0.8, 0],
-                  backgroundColor: ["#ffffff", "#10b981", "#ff0055", "#ffffff", "#ffffff"]
+                  // 💡 一瞬だけ最大輝度になり、0.3秒で完全に消え去るように調整
+                  opacity: [0, 1, 0.8, 0],
+                  backgroundColor: ["#ffffff", "#10b981", "#ff0055", "#ffffff"]
                 }}
                 transition={{ 
-                  duration: 0.6, 
-                  times: [0, 0.1, 0.25, 0.4, 1],
-                  ease: "easeInOut" 
+                  duration: 0.35, // 1.5秒から0.35秒へ大幅に短縮！
+                  times: [0, 0.15, 0.3, 1],
+                  ease: "easeOut" 
                 }}
               />
+
             </>
           )}
 
