@@ -5,14 +5,22 @@
 import { motion, Variants } from "framer-motion";
 import { useEffect, useState } from "react";
 
-// 💡 ClientLayoutWrapperから渡される isFirstVisit を受け取るための型定義
-interface LoadingScreenProps {
-  isFirstVisit: boolean;
+interface RippleType {
+  id: number;
+  x: number;
+  y: number;
 }
 
-// 💡 引数で { isFirstVisit } を受け取れるようにしました
-export default function LoadingScreen({ isFirstVisit }: LoadingScreenProps) {
+// 💡 refresh-animation ブランチ側の高機能な Props 定義を採用します
+interface LoadingScreenProps {
+  isFirstVisit: boolean;
+  onTouch: (e: React.MouseEvent | React.TouchEvent) => void;
+  waitingForTouch: boolean;
+}
+
+export default function LoadingScreen({ isFirstVisit, onTouch, waitingForTouch }: LoadingScreenProps) {
   const [randomHex, setRandomHex] = useState("0x0000");
+  const [ripples, setRipples] = useState<RippleType[]>([]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -20,6 +28,34 @@ export default function LoadingScreen({ isFirstVisit }: LoadingScreenProps) {
     }, 120);
     return () => clearInterval(interval);
   }, []);
+
+  // リップルエフェクトを追加する関数
+  const handleInteraction = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!waitingForTouch) return;
+
+    let x: number, y: number;
+    if ('touches' in e) {
+      x = e.touches[0].clientX;
+      y = e.touches[0].clientY;
+    } else {
+      x = e.clientX;
+      y = e.clientY;
+    }
+
+    const newRipple: RippleType = {
+      id: Date.now(),
+      x,
+      y,
+    };
+    setRipples((prev) => [...prev, newRipple]);
+
+    // リップルアニメーション後に削除
+    setTimeout(() => {
+      setRipples((prev) => prev.filter((r) => r.id !== newRipple.id));
+    }, 1000);
+
+    onTouch(e);
+  };
 
   // 💡 型を「: Variants」と指定し、easeの配列エラーを解消しました
   const glitchVariants: Variants = {
@@ -46,14 +82,53 @@ export default function LoadingScreen({ isFirstVisit }: LoadingScreenProps) {
 
   return (
     <motion.div
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black overflow-hidden select-none font-mono"
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black overflow-hidden select-none font-mono cursor-pointer"
       initial={{ opacity: 1 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.6, ease: "easeInOut" }}
+      onClick={waitingForTouch ? handleInteraction : undefined}
+      onTouchStart={waitingForTouch ? handleInteraction : undefined}
     >
       {/* 画面全体のスキャンライン */}
       <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%)] bg-[length:100%_4px] opacity-30" />
+
+      {/* リップルエフェクト */}
+      {ripples.map((ripple) => (
+        <motion.div
+          key={ripple.id}
+          className="absolute pointer-events-none"
+          style={{ left: ripple.x, top: ripple.y }}
+          initial={{ opacity: 0.8 }}
+          animate={{ opacity: 0 }}
+          transition={{ duration: 1, ease: "easeOut" }}
+        >
+          {/* 複数の波紋リング */}
+          {[0, 1, 2].map((i) => (
+            <motion.div
+              key={i}
+              className="absolute rounded-full border border-white/40"
+              style={{ 
+                left: '50%', 
+                top: '50%', 
+                translateX: '-50%', 
+                translateY: '-50%' 
+              }}
+              initial={{ width: 0, height: 0, opacity: 0.6 }}
+              animate={{ 
+                width: 300 + i * 100, 
+                height: 300 + i * 100, 
+                opacity: 0 
+              }}
+              transition={{ 
+                duration: 0.8 + i * 0.2, 
+                ease: "easeOut", 
+                delay: i * 0.1 
+              }}
+            />
+          ))}
+        </motion.div>
+      ))}
 
       {/* 画面の4隅を使った機材風UI */}
       <div className="absolute top-6 left-6 flex flex-col text-[10px] text-neutral-500 tracking-wider">
@@ -80,7 +155,8 @@ export default function LoadingScreen({ isFirstVisit }: LoadingScreenProps) {
       </div>
 
       <div className="absolute bottom-8 right-6 text-[10px] text-neutral-400 tracking-widest">
-        <span>GANG CAT RECORDS</span>
+        {/* 💡 ©マークが付いているほうを採用します */}
+        <span>© GANG CAT RECORDS</span>
       </div>
 
       {/* 中央のカメラ風照準フレーム */}
@@ -128,6 +204,21 @@ export default function LoadingScreen({ isFirstVisit }: LoadingScreenProps) {
         animate={{ width: "100%" }}
         transition={{ duration: 2.5, ease: "easeInOut" }}
       />
+
+      {/* タッチ促進メッセージ（初回訪問でタッチ待機中のみ表示） */}
+      {isFirstVisit && waitingForTouch && (
+        <motion.div
+          className="absolute bottom-20 left-1/2 -translate-x-1/2 text-center"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: [0.4, 1, 0.4] }}
+          transition={{ duration: 2, ease: "easeInOut", repeat: Infinity }}
+        >
+          <span className="text-xs text-neutral-400 tracking-[0.3em] uppercase">
+            Tap anywhere to start
+          </span>
+        </motion.div>
+      )}
     </motion.div>
   );
 }
+
