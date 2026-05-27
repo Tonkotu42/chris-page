@@ -20,8 +20,8 @@ function YouTubeEmbed({ id }: { id: string }) {
 export default function Home() {
   const name = "CHRIS";
   const tagline = "Composer / Producer"; // 好きな肩書きに変更OK
-  const email = "your@email.com"; // 自分の連絡先に差し替え
-  const youtubeChannelUrl = "https://www.youtube.com/@yourchannel"; // チャンネルURLに差し替え
+  const email = "killcount412@gmail.com"; // 自分の連絡先に差し替え
+  const youtubeChannelUrl = "https://www.youtube.com/@shota_christopher_ohyama"; // チャンネルURLに差し替え
 
   return (
     <main className="mx-auto max-w-3xl px-5 py-12">
