@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-// ソニー風に最適な Inter と Noto Sans JP をインポート
 import { Inter, Noto_Sans_JP } from "next/font/google";
+import ClientLayoutWrapper from "./ClientLayoutWrapper"; // 2で作成するコンポーネント
 import "./globals.css";
 
 // 英語用フォントの設定
@@ -13,9 +13,10 @@ const inter = Inter({
 const notoSansJP = Noto_Sans_JP({
   variable: "--font-noto-sans",
   subsets: ["latin"],
-  weight: ["400", "500", "700"], // 必要な太さを指定
+  weight: ["400", "500", "700"],
 });
 
+// メタデータ（サーバーコンポーネントでのみ定義可能）
 export const metadata: Metadata = {
   title: "Sony Style Portfolio",
   description: "Created with Next.js and Framer Motion",
@@ -28,11 +29,12 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="ja" // 日本語環境に合わせて ja に変更
+      lang="ja"
       className={`${inter.variable} ${notoSansJP.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-black text-white">
-        {children}
+      <body className="min-h-full flex flex-col bg-black text-white overflow-x-hidden">
+        {/* クライアント側の演出部分のみをラップ */}
+        <ClientLayoutWrapper>{children}</ClientLayoutWrapper>
       </body>
     </html>
   );
