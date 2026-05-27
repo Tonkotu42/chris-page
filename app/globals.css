@@ -24,3 +24,13 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* app/globals.css の末尾に追加（任意） */
+@keyframes ambient-flicker {
+  0%, 100% { opacity: 0.98; }
+  50% { opacity: 1; }
+}
+
+.fixed.inset-0 {
+  animation: ambient-flicker 0.15s infinite;
+}
