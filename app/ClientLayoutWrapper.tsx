@@ -23,9 +23,12 @@ export default function ClientLayoutWrapper({
       // 初回訪問：タッチ待機状態に
       setIsFirstVisit(true);
       setWaitingForTouch(true);
-      // 音声を準備
+      // 音声を準備・プリロード
       const audio = new Audio("/audio/startup.mp3");
       audio.volume = 0.5;
+      audio.preload = "auto";
+      // 音声データを事前に読み込む
+      audio.load();
       audioRef[1](audio);
     } else {
       // 2回目以降：1秒後に自動でメニュー表示
