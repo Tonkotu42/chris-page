@@ -10,27 +10,46 @@ export default function ClientLayoutWrapper({
 }: {
   children: React.ReactNode;
 }) {
-  const [isLoading, setIsLoading] = useState(true);
+  // 💡 チラつき防止のため、初期値は false（ローディングなし）にしておく
+  const [isLoading, setIsLoading] = useState(false);
+  // 💡 ハイドレーションエラーを防ぐためのマウント状態管理
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
-    // 3000ミリ秒（3秒間）はインサート画面をキープする
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 3000);
+    setIsMounted(true);
 
-    return () => clearTimeout(timer);
+    // セッションストレージを確認
+    const hasVisited = sessionStorage.getItem("hasVisitedBefore");
+
+    if (!hasVisited) {
+      // 【初回起動時のみ】ローディングを有効にし、フラグを保存
+      setIsLoading(true);
+      sessionStorage.setItem("hasVisitedBefore", "true");
+
+      // 3秒後にローディングを終了
+      const timer = setTimeout(() => {
+        setIsLoading(false);
+      }, 3000);
+
+      return () => clearTimeout(timer);
+    }
   }, []);
+
+  // 💡 サーバーサイドレンダリング時はコンテンツのみを返してエラーを防ぐ
+  if (!isMounted) {
+    return <div className="flex-1 flex flex-col">{children}</div>;
+  }
 
   return (
     <AnimatePresence mode="wait">
-      {isLoading && (
+      {isLoading ? (
         <LoadingScreen key="loader" onComplete={() => {}} />
-      )}
-      {!isLoading && (
+      ) : (
         <motion.div
           key="content"
           className="flex-1 flex flex-col"
-          initial={{ opacity: 0, y: 10 }}
+          // 💡 リロード時はアニメーション（initial）をスキップして即座に表示させる
+          initial={sessionStorage.getItem("hasVisitedBefore") ? false : { opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: "easeOut" }}
         >
@@ -40,3 +59,4 @@ export default function ClientLayoutWrapper({
     </AnimatePresence>
   );
 }
+
