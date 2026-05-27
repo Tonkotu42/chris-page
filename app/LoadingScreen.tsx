@@ -10,8 +10,8 @@ export default function LoadingScreen({ onComplete }: { onComplete: () => void }
       initial={{ opacity: 1 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      // 画面全体が消える時間を5秒（5.0）にして滑らかに
-      transition={{ duration: 5, ease: "easeInOut" }}
+      // 画面全体が消える時間を3秒（5.0）にして滑らかに
+      transition={{ duration: 3, ease: "easeInOut" }}
       onAnimationComplete={onComplete}
     >
       <div className="overflow-hidden">
