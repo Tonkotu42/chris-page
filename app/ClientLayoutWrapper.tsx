@@ -24,7 +24,7 @@ export default function ClientLayoutWrapper({
   useEffect(() => {
     const hasVisited = sessionStorage.getItem("hasVisitedInsert");
     
-    startupAudioRef.current = new Audio("/audio/startup.mp3");
+    startupAudioRef.current = new Audio("/audio/startup.ogg");
     startupAudioRef.current.volume = 0.5;
 
     if (!hasVisited) {
