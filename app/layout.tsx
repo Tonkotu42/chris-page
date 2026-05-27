@@ -18,7 +18,7 @@ const notoSansJP = Noto_Sans_JP({
 
 // メタデータ（サーバーコンポーネントでのみ定義可能）
 export const metadata: Metadata = {
-  title: "Sony Style Portfolio",
+  title: "GANG CAT RECORDS",
   description: "Created with Next.js and Framer Motion",
 };
 
