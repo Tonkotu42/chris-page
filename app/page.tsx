@@ -16,7 +16,7 @@ function YouTubeEmbed({ id }: { id: string }) {
     </div>
   );
 }
-
+ 
 export default function Home() {
   const name = "CHRIS";
   const tagline = "Composer / Producer"; // 好きな肩書きに変更OK
