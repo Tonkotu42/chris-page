@@ -16,8 +16,9 @@ export default function ClientLayoutWrapper({
   const [showWingsTransition, setShowWingsTransition] = useState(false);
   const [waitingForTouch, setWaitingForTouch] = useState(false);
   
-  // 通常ロゴからWELCOME BACKへ切り替えるトリガー
   const [changeToWelcome, setChangeToWelcome] = useState(false);
+  // 💡 追加：リフレッシュ画面を呼び出す状態
+  const [isReloading, setIsReloading] = useState(false);
 
   const startupAudioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -25,23 +26,22 @@ export default function ClientLayoutWrapper({
     const hasVisited = sessionStorage.getItem("hasVisitedInsert");
     
     if (!hasVisited) {
-      // 【初回訪問時】
       setIsFirstVisit(true);
       setWaitingForTouch(true);
+      setIsReloading(false); // 初回はFalse
       
       startupAudioRef.current = new Audio("/audio/startup.ogg");
       startupAudioRef.current.volume = 0.5;
     } else {
-      // 【リフレッシュ（2回目以降）時】
       setIsFirstVisit(false);
       setWaitingForTouch(false);
+      // 💡 追加：2回目以降のアクセス（リフレッシュ）時はTrueにする
+      setIsReloading(true);
 
-      // リフレッシュ専用の短い音声を生成して最速で鳴らす
-      const refreshAudio = new Audio("/audio/reload.ogg"); // ※拡張子は.oggでも可
-      refreshAudio.volume = 0.4; // リピート時は少し控えめの音量に
+      const refreshAudio = new Audio("/audio/reload.ogg");
+      refreshAudio.volume = 0.4;
       
       refreshAudio.play().catch((err) => {
-        // 初回訪問ではないため、ブラウザのセキュリティ制限でブロックされる場合があります
         console.log("リフレッシュ音の自動再生がブロックされました:", err);
       });
 
@@ -54,8 +54,6 @@ export default function ClientLayoutWrapper({
     }
   }, []);
 
-  // 音声をタッチ直後に最速で鳴らすように修正
-  // 音声のリアルタイムな再生開始を検知してアニメーションを動かす
   const handleTouch = () => {
     if (!waitingForTouch) return;
     setWaitingForTouch(false);
@@ -63,30 +61,24 @@ export default function ClientLayoutWrapper({
     if (startupAudioRef.current) {
       const audio = startupAudioRef.current;
 
-      // 1. 音声が実際に再生開始され、再生時間が動き出した瞬間を監視するイベント
       const onAudioStart = () => {
-        // 音が鳴り始めたら、200ms（0.2秒）後に羽の展開と文字切り替えをスタート！
         setTimeout(() => {
           setShowWingsTransition(true);
           setChangeToWelcome(true);
           
-          // さらに1.2秒後に画面をフェードアウトしてメニューへ
           setTimeout(() => {
             setIsLoading(false);
             sessionStorage.setItem("hasVisitedInsert", "true");
           }, 1200);
         }, 200);
 
-        // イベントが何度も実行されないように一度実行したら削除する
         audio.removeEventListener("timeupdate", onAudioStart);
       };
 
       audio.addEventListener("timeupdate", onAudioStart);
 
-      // 2. タッチの瞬間に最速で再生命令を出す
       audio.play().catch((err) => {
         console.log(err);
-        // 万が一ブラウザに再生をブロックされた場合のセーフティ（即座にアニメーションを動かす）
         setShowWingsTransition(true);
         setChangeToWelcome(true);
         setTimeout(() => {
@@ -106,13 +98,13 @@ export default function ClientLayoutWrapper({
             isFirstVisit={isFirstVisit}
             onTouch={handleTouch}
             waitingForTouch={waitingForTouch}
-            changeToWelcome={changeToWelcome} // 状態をLoadingScreenに引き渡す
+            changeToWelcome={changeToWelcome}
+            // 💡 追加：LoadingScreenにリフレッシュ状態を流し込む
+            isReloading={isReloading}
           />
           
-          {/* シンメトリー機械羽 */}
           {showWingsTransition && (
             <>
-              {/* 左の機械羽（上下逆転） */}
               <div className="fixed inset-y-0 left-0 w-1/2 z-50 overflow-hidden pointer-events-none">
                 <motion.svg
                   viewBox="0 0 450 900"
@@ -134,7 +126,6 @@ export default function ClientLayoutWrapper({
                 </motion.svg>
               </div>
               
-              {/* 右の機械羽（完全シンメトリー ＆ 上下逆転） */}
               <div className="fixed inset-y-0 right-0 w-1/2 z-50 overflow-hidden pointer-events-none">
                 <motion.svg
                   viewBox="0 0 450 900"

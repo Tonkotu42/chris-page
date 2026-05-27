@@ -14,15 +14,16 @@ interface LoadingScreenProps {
   isFirstVisit: boolean;
   onTouch: (e: React.MouseEvent | React.TouchEvent) => void;
   waitingForTouch: boolean;
-  // 💡 追加：テキストをWELCOME BACKに切り替えるフラグ
   changeToWelcome?: boolean;
+  isReloading?: boolean;
 }
 
 export default function LoadingScreen({ 
   isFirstVisit, 
   onTouch, 
   waitingForTouch,
-  changeToWelcome = false // デフォルトは通常ロゴ
+  changeToWelcome = false,
+  isReloading = false
 }: LoadingScreenProps) {
   const [randomHex, setRandomHex] = useState("0x0000");
   const [ripples, setRipples] = useState<RippleType[]>([]);
@@ -77,8 +78,11 @@ export default function LoadingScreen({
     }
   };
 
-  // 💡 フラグによって表示する文字を決定
-  const mainText = changeToWelcome ? "WELCOME BACK" : "GANG CAT RECORDS";
+  const mainText = isReloading 
+    ? "RELOADING..." 
+    : changeToWelcome 
+      ? "WELCOME BACK" 
+      : "GANG CAT RECORDS";
 
   return (
     <motion.div
@@ -101,6 +105,7 @@ export default function LoadingScreen({
           animate={{ opacity: 0 }}
           transition={{ duration: 1, ease: "easeOut" }}
         >
+          {/* 💡 ここを修正しました：[0, 1, 2] を補完 */}
           {[0, 1, 2].map((i) => (
             <motion.div
               key={i}
@@ -116,14 +121,14 @@ export default function LoadingScreen({
 
       <div className="absolute top-6 left-6 flex flex-col text-[10px] text-neutral-500 tracking-wider">
         <span className="text-neutral-400 font-bold">SYS_STATUS: RUNNING</span>
-        <span>BOOT_SEQ: {isFirstVisit ? "INITIAL_LAUNCH" : "RE_INITIALIZED"}</span>
+        <span>BOOT_SEQ: {isReloading ? "DATA_REFRESH" : isFirstVisit ? "INITIAL_LAUNCH" : "RE_INITIALIZED"}</span>
       </div>
 
       <div className="absolute top-6 right-6 flex items-center gap-2 text-[10px] text-neutral-500">
         <motion.span 
           animate={{ opacity: [1, 0.2, 1] }} 
           transition={{ repeat: Infinity, duration: 1.2, ease: "easeInOut" }} 
-          className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]"
+          className={`w-1.5 h-1.5 rounded-full ${isReloading ? "bg-amber-500 shadow-[0_0_8px_#f59e0b]" : "bg-emerald-500 shadow-[0_0_8px_#10b981]"}`}
         />
         <span>LINK: SECURE</span>
         <span className="text-neutral-400 font-bold ml-2">{randomHex}</span>
@@ -145,8 +150,6 @@ export default function LoadingScreen({
         <div className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-white -mb-[2px] -mr-[2px]" />
       </div>
 
-      {/* 中央のメインロゴ（切り替え対応版） */}
-      {/* 💡 keyにmainTextを指定することで、文字が変わった瞬間にFramer Motionが検知して一瞬グリッチが入るようになります */}
       <div className="relative overflow-hidden p-8 z-10">
         <motion.div
           key={`bg-${mainText}`}
@@ -182,7 +185,7 @@ export default function LoadingScreen({
         transition={{ duration: 2.5, ease: "easeInOut" }}
       />
 
-      {isFirstVisit && waitingForTouch && (
+      {isFirstVisit && waitingForTouch && !isReloading && (
         <motion.div
           className="absolute bottom-20 left-1/2 -translate-x-1/2 text-center"
           initial={{ opacity: 0 }}
