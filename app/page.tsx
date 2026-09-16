@@ -1,6 +1,6 @@
 const YT = {
-  featured: "pDoqCbzq4AI",
-  works: ["pDoqCbzq4AI", "eVXfIjVjnc0", "VIDEO_ID_3"], // ここは増やしてOK
+  featured: "eVXfIjVjnc0",
+  works: ["pDoqCbzq4AI", "eVXfIjVjnc0", "_EXJnw6Oh6M"], // ここは増やしてOK
 };
 
 function YouTubeEmbed({ id }: { id: string }) {
