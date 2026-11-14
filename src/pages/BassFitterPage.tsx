@@ -1,187 +1,178 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { motion } from 'motion/react';
-import {
-  ArrowDown,
-  ArrowLeft,
-  AudioLines,
-  CircleHelp,
-  Gauge,
-  Headphones,
-  SlidersHorizontal,
-  Waves,
-} from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { ArrowDown, ArrowLeft, Headphones, SlidersHorizontal, Waves } from 'lucide-react';
 
 const controls = [
   {
     id: 'mode',
-    label: 'Downward / Upward',
-    shortLabel: 'Mode',
-    x: 12.5,
-    y: 8.6,
-    description:
-      'コンプレッションの動作方向を選びます。DownwardはThresholdを超えた信号を抑え、Upwardは小さな信号を持ち上げる方式です。',
+    label: 'Downward',
+    x: 11,
+    y: 9,
+    hitWidth: 19,
+    shape: 'pill',
+    description: 'コンプレッションの動作モードを選びます。画面ではDownwardが選択されています。',
   },
   {
     id: 'spectrum',
     label: 'Spectrum',
-    shortLabel: 'Spectrum',
-    x: 32.5,
-    y: 8.6,
-    description:
-      'スペクトラム表示のオン／オフを切り替えます。オンにすると、再生中の周波数バランスを画面上で確認できます。',
+    x: 25,
+    y: 9,
+    hitWidth: 14,
+    shape: 'pill',
+    description: '周波数スペクトラム表示のオン／オフを切り替えます。',
   },
   {
     id: 'meter',
     label: 'Meter',
-    shortLabel: 'Meter',
-    x: 49.5,
-    y: 8.6,
-    description:
-      'メーター表示のオン／オフを切り替えます。処理中のレベルを確認し、出力が大きくなりすぎていないかチェックします。',
+    x: 42.5,
+    y: 9,
+    hitWidth: 14,
+    shape: 'pill',
+    description: 'レベルメーター表示のオン／オフを切り替えます。',
   },
   {
     id: 'subsonic',
     label: 'Subsonic',
-    shortLabel: 'Subsonic',
-    x: 65,
-    y: 8.6,
-    description:
-      'サブソニック処理を切り替えます。音楽的な低音として不要な超低域を扱う設定です。効果を聴き比べながら使います。',
+    x: 57.5,
+    y: 9,
+    hitWidth: 15,
+    shape: 'pill',
+    description: 'サブソニック機能のオン／オフを切り替えます。',
   },
   {
     id: 'bypass',
     label: 'Bypass',
-    shortLabel: 'Bypass',
-    x: 76,
-    y: 8.6,
-    description:
-      'プラグインの処理を一時的に迂回します。オン／オフを切り替えて、加工前と加工後の音を同じ音量感で比較します。',
+    x: 75,
+    y: 9,
+    hitWidth: 13,
+    shape: 'pill',
+    description: 'エフェクト処理を迂回し、処理前と処理後の音を聴き比べます。',
   },
   {
     id: 'spectrum-display',
     label: 'Spectrum display',
-    shortLabel: 'Spectrum',
     x: 50,
     y: 38,
-    description:
-      '横軸は周波数です。20 Hz付近の超低域から高域までを見渡し、低音がどの帯域に集まっているか確認します。',
+    hitWidth: 94,
+    shape: 'panel',
+    description: '周波数スペクトラムを表示するエリアです。横軸は周波数を表します。',
   },
   {
     id: 'target',
     label: 'Target',
-    shortLabel: 'Target',
     x: 7.5,
-    y: 76,
-    description:
-      '処理の目標値を調整するノブです。値を少しずつ動かし、低域のまとまりと元の音の自然さのバランスを取ります。',
+    y: 77.5,
+    hitWidth: 10,
+    shape: 'knob',
+    description: 'Targetを調整し、低域処理のかかり方を整えます。',
   },
   {
     id: 'freq',
     label: 'Freq',
-    shortLabel: 'Freq',
     x: 18.5,
-    y: 76,
-    description:
-      '処理の基準となる周波数を設定します。表示例は150 Hzです。対象にしたいベースやキックの帯域に合わせます。',
+    y: 77.5,
+    hitWidth: 10,
+    shape: 'knob',
+    description: '処理の基準となる周波数を設定します。画像では150.0 Hzです。',
   },
   {
     id: 'sub-hpf',
     label: 'Sub HPF',
-    shortLabel: 'Sub HPF',
-    x: 30,
-    y: 76,
-    description:
-      'サブ帯域にかけるハイパスフィルターの周波数を設定します。表示例は25 Hz。不要な超低域を整理する際に使います。',
+    x: 29.5,
+    y: 77.5,
+    hitWidth: 10,
+    shape: 'knob',
+    description: 'サブ帯域のハイパスフィルターを設定します。画像では25.0 Hzです。',
   },
   {
     id: 'threshold',
-    label: 'Threshold',
-    shortLabel: 'Thresh',
-    x: 42,
-    y: 76,
-    description:
-      'コンプレッションが動き始めるレベルです。下げるほど処理される信号が増えます。表示例は−12 dBです。',
+    label: 'Thresh',
+    x: 41,
+    y: 77.5,
+    hitWidth: 10,
+    shape: 'knob',
+    description: 'コンプレッションが動作を始めるしきい値を設定します。画像では−12.0 dBです。',
   },
   {
     id: 'ratio',
     label: 'Ratio',
-    shortLabel: 'Ratio',
     x: 53.5,
-    y: 76,
-    description:
-      'Thresholdを超えた信号をどの程度圧縮するか決めます。表示例の2.0は、穏やかな圧縮から始める設定です。',
+    y: 77.5,
+    hitWidth: 10,
+    shape: 'knob',
+    description: 'しきい値を超えた信号への圧縮比を設定します。画像では2.0です。',
   },
   {
     id: 'attack',
     label: 'Attack',
-    shortLabel: 'Attack',
-    x: 65.5,
-    y: 76,
-    description:
-      'Thresholdを超えてから圧縮が働くまでの時間です。短くすると素早く反応し、長くすると音の立ち上がりを残しやすくなります。',
+    x: 64.5,
+    y: 77.5,
+    hitWidth: 10,
+    shape: 'knob',
+    description: 'コンプレッションが動作し始めるまでの時間を設定します。画像では10.0です。',
   },
   {
     id: 'release',
     label: 'Release',
-    shortLabel: 'Release',
-    x: 77,
-    y: 76,
-    description:
-      '信号がThresholdを下回った後、圧縮が戻るまでの時間です。低音の揺れやポンピングが自然になる位置を探します。',
+    x: 76.5,
+    y: 77.5,
+    hitWidth: 10,
+    shape: 'knob',
+    description: 'コンプレッションが戻るまでの時間を設定します。画像では100.0です。',
   },
   {
     id: 'rms',
     label: 'RMS',
-    shortLabel: 'RMS',
-    x: 88.5,
-    y: 76,
-    description:
-      '信号レベルを平均化して検出する時間を調整します。短い設定は細かな変化に、長い設定は音量の平均的な動きに反応します。',
+    x: 87.5,
+    y: 77.5,
+    hitWidth: 10,
+    shape: 'knob',
+    description: '信号レベルの検出時間を設定します。画像では10.0です。',
   },
   {
     id: 'output',
     label: 'Output meter',
-    shortLabel: 'Output',
     x: 96.5,
     y: 86,
-    description:
-      '処理後の出力レベルを確認します。音割れを避け、バイパス時と比較できる音量に整えます。',
+    hitWidth: 8,
+    shape: 'meter',
+    description: '処理後の出力レベルを確認するメーターです。',
   },
 ];
 
-const workflow = [
+const steps = [
   {
-    title: '1. まずは再生して観察',
-    text: 'ベースとキックが鳴る箇所をループし、スペクトラムとメーターで低域の状態を確認します。',
+    title: '音を再生する',
+    text: 'ベースやキックを含む箇所を再生し、スペクトラムとメーターを見ながら低域の状態を確認します。',
+    icon: Headphones,
   },
   {
-    title: '2. 基準と圧縮を調整',
-    text: 'FreqやSub HPFで対象帯域を定め、ThresholdとRatioを控えめに設定。AttackとReleaseで音の動きを整えます。',
+    title: '低域を調整する',
+    text: 'FreqやSub HPFで対象を決め、ThreshとRatioを調整します。AttackとReleaseで音の動きを整えます。',
+    icon: SlidersHorizontal,
   },
   {
-    title: '3. Bypassで聴き比べ',
-    text: 'Bypassを切り替えて変化を確認し、出力レベルを揃えます。低音が自然に聞こえる設定を選びます。',
+    title: '音を聴き比べる',
+    text: 'Bypassを切り替えて処理前後を比較し、出力レベルにも注意しながら自然な設定を選びます。',
+    icon: Waves,
   },
 ];
 
 export default function BassFitterPage() {
-  const [selectedControlId, setSelectedControlId] = useState('mode');
-  const selectedControl =
-    controls.find((control) => control.id === selectedControlId) ?? controls[0];
+  const [selectedControlId, setSelectedControlId] = useState<string | null>(null);
+  const selectedControl = controls.find((control) => control.id === selectedControlId);
 
   useEffect(() => {
     document.title = 'BassFitter | CHRIS';
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#08090c] text-neutral-100 selection:bg-red-500/25 selection:text-white">
-      <div
-        className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.07),transparent_35%)]"
-        aria-hidden="true"
-      />
-
-      <header className="relative z-10 border-b border-white/10 bg-[#08090c]/80 backdrop-blur-md">
+    <div
+      className="min-h-screen bg-black text-neutral-100 selection:bg-white/25 selection:text-white"
+      onClick={() => setSelectedControlId(null)}
+    >
+      <header className="border-b border-white/10 bg-black">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link
             to="/"
@@ -196,149 +187,133 @@ export default function BassFitterPage() {
         </div>
       </header>
 
-      <main className="relative z-10 mx-auto max-w-6xl px-6 pb-24 pt-12 md:pt-16">
+      <main className="mx-auto max-w-5xl px-6 pb-24 pt-12 md:pt-16">
         <motion.section
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.55 }}
-          className="mb-12"
         >
-          <p className="flex items-center gap-2 text-xs uppercase tracking-[0.28em] text-neutral-400">
-            <Waves className="h-4 w-4 text-red-300" />
-            Bass processing, made clear
-          </p>
-          <h1 className="mt-4 text-4xl font-bold tracking-tight text-white sm:text-5xl">
+          <h1 className="text-4xl font-bold tracking-tight text-white sm:text-5xl">
             BassFitter
           </h1>
-          <p className="mt-4 max-w-2xl text-base leading-7 text-neutral-300">
-            低域を整えるためのコンプレッサープラグイン。
-            実際の画面を見ながら各コントロールの役割を確認し、音を聴いて少しずつ調整する流れを紹介します。
+          <p className="mt-4 text-sm text-neutral-400 sm:text-base">
+            低域を整えるコンプレッサープラグイン。
           </p>
-        </motion.section>
 
-        <section aria-labelledby="interface-title">
-          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <p className="text-[10px] uppercase tracking-[0.25em] text-neutral-500">
-                Interactive guide
-              </p>
-              <h2 id="interface-title" className="mt-1 text-xl font-semibold text-white">
-                画面のポイントを選んで解説を見る
-              </h2>
-            </div>
-            <p className="text-xs text-neutral-500">番号をクリックしてください</p>
-          </div>
-
-          <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.55fr)_minmax(260px,0.75fr)]">
-            <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111316] p-2 shadow-2xl">
+          <div className="mt-10 grid items-start gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(240px,0.7fr)]">
+            <div className="overflow-hidden rounded-xl border border-white/10 bg-black p-2 shadow-2xl">
               <div className="relative">
                 <img
                   src="/bassfitter-interface.png"
-                  alt="BassFitterプラグインの画面。上部にモードと各種表示設定、中央に周波数スペクトラム、下部にTarget、Freq、Sub HPF、Thresh、Ratio、Attack、Release、RMSのノブが並ぶ。"
+                  alt="BassFitter plugin interface"
                   className="block h-auto w-full"
                   width="624"
                   height="396"
                 />
-                {controls.map((control, index) => {
+                {controls.map((control) => {
                   const isSelected = selectedControlId === control.id;
                   return (
                     <button
                       key={control.id}
                       type="button"
-                      aria-label={`${index + 1}. ${control.label}の説明を表示`}
+                      aria-label={`${control.label}の説明を表示`}
                       aria-pressed={isSelected}
                       title={control.label}
-                      onClick={() => setSelectedControlId(control.id)}
-                      className="absolute h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full bg-transparent transition hover:bg-red-400/15 hover:ring-1 hover:ring-red-300/80 focus-visible:bg-red-400/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-300"
-                      style={{ left: `${control.x}%`, top: `${control.y}%` }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setSelectedControlId(control.id);
+                      }}
+                      className={`absolute -translate-x-1/2 -translate-y-1/2 border transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${
+                        control.shape === 'knob' || control.shape === 'meter'
+                          ? 'aspect-square rounded-full'
+                          : control.shape === 'pill'
+                            ? 'rounded-full'
+                            : 'rounded-md'
+                      } ${
+                        isSelected
+                          ? 'border-white/80 bg-white/20 shadow-[0_0_16px_rgba(255,255,255,0.28)]'
+                          : 'border-transparent bg-transparent hover:border-white/50 hover:bg-white/10'
+                      }`}
+                      style={{
+                        left: `${control.x}%`,
+                        top: `${control.y}%`,
+                        width: `${control.hitWidth}%`,
+                        aspectRatio:
+                          control.shape === 'panel'
+                            ? '3.2 / 1'
+                            : control.shape === 'pill'
+                              ? '4 / 1'
+                              : '1 / 1',
+                      }}
                     />
                   );
                 })}
               </div>
             </div>
 
-            <motion.aside
-              key={selectedControl.id}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.2 }}
-              aria-live="polite"
-              className="rounded-2xl border border-white/10 bg-white/[0.03] p-5"
-            >
-              <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-red-200">
-                <CircleHelp className="h-4 w-4" />
-                Selected control
-              </div>
-              <h3 className="mt-4 text-2xl font-semibold text-white">
-                {selectedControl.label}
-              </h3>
-              <p className="mt-3 text-sm leading-7 text-neutral-300">
-                {selectedControl.description}
-              </p>
-              <p className="mt-5 border-t border-white/10 pt-4 text-xs leading-6 text-neutral-500">
-                まずは小さな変化から試し、音量を揃えて前後を聴き比べてください。
-              </p>
-            </motion.aside>
+            <AnimatePresence mode="wait">
+              {selectedControl && (
+                <motion.aside
+                  key={selectedControl.id}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 4 }}
+                  transition={{ duration: 0.2 }}
+                  aria-live="polite"
+                  className="rounded-xl border border-white/10 bg-white/[0.03] p-5"
+                >
+                  <h2 className="text-xl font-semibold text-white">{selectedControl.label}</h2>
+                  <p className="mt-3 text-sm leading-7 text-neutral-300">
+                    {selectedControl.description}
+                  </p>
+                </motion.aside>
+              )}
+            </AnimatePresence>
           </div>
+        </motion.section>
 
-          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
-            {controls.map((control, index) => (
-              <button
-                key={control.id}
-                type="button"
-                onClick={() => setSelectedControlId(control.id)}
-                aria-pressed={selectedControlId === control.id}
-                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs transition ${
-                  selectedControlId === control.id
-                    ? 'border-red-300/50 bg-red-300/10 text-white'
-                    : 'border-white/10 bg-white/[0.02] text-neutral-400 hover:border-white/20 hover:text-white'
-                }`}
-              >
-                <span className="font-mono text-[10px] text-red-200">{index + 1}</span>
-                <span>{control.shortLabel}</span>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="mt-20">
-          <div className="mb-7">
-            <p className="text-[10px] uppercase tracking-[0.25em] text-neutral-500">
-              Signal flow
-            </p>
-            <h2 className="mt-2 text-2xl font-semibold text-white">
-              基本の使い方
-            </h2>
+        <motion.section
+          initial={{ opacity: 0, y: 24 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: false, amount: 0.2 }}
+          transition={{ duration: 0.5 }}
+          className="mt-24 border-t border-white/10 pt-10"
+        >
+          <div className="mb-7 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.25em] text-neutral-500">
+                Quick start
+              </p>
+              <h2 className="mt-2 text-2xl font-semibold text-white">使い方</h2>
+            </div>
+            <ArrowDown className="h-5 w-5 text-neutral-500" aria-hidden="true" />
           </div>
 
           <div className="grid gap-4 md:grid-cols-3">
-            {workflow.map((step, index) => {
-              const icons = [AudioLines, SlidersHorizontal, Headphones];
-              const Icon = icons[index];
+            {steps.map((step) => {
+              const Icon = step.icon;
               return (
                 <article
                   key={step.title}
-                  className="rounded-2xl border border-white/10 bg-white/[0.025] p-5"
+                  className="rounded-xl border border-white/10 bg-white/[0.025] p-5"
                 >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-red-200">
-                    <Icon className="h-5 w-5" />
+                  <div className="flex justify-end">
+                    <Icon className="h-4 w-4 text-red-200" />
                   </div>
                   <h3 className="mt-5 font-semibold text-white">{step.title}</h3>
-                  <p className="mt-3 text-sm leading-7 text-neutral-400">{step.text}</p>
+                  <p className="mt-2 text-sm leading-6 text-neutral-400">{step.text}</p>
                 </article>
               );
             })}
           </div>
 
-          <div className="mt-5 flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-4 text-sm leading-6 text-neutral-400">
-            <Gauge className="mt-0.5 h-4 w-4 shrink-0 text-red-200" />
-            <p>
-              画面上の値は共有いただいたスクリーンショットに表示されている初期値です。
-              実際の効果や最適値は素材、音量、再生環境によって変わるため、耳で確認しながら調整してください。
-              ユーザーガイドは画面の操作を紹介するもので、音声処理を実行するものではありません。
-            </p>
-          </div>
-        </section>
+          <Link
+            to="/"
+            className="mt-8 inline-flex text-sm text-neutral-400 transition hover:text-white"
+          >
+            CHRIS Official Site
+          </Link>
+        </motion.section>
       </main>
     </div>
   );

@@ -50,7 +50,7 @@ export const OpeningIntro: React.FC<OpeningIntroProps> = ({ onComplete }) => {
         transition: { duration: 0.8, ease: [0.22, 1, 0.36, 1] },
       }}
       onClick={handleEnter}
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#070709] text-white cursor-pointer select-none overflow-hidden outline-none"
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black text-white cursor-pointer select-none overflow-hidden outline-none"
     >
       {/* 右上サウンドコントロール */}
       <div className="absolute top-6 right-6 z-20 flex items-center gap-2">
@@ -73,20 +73,6 @@ export const OpeningIntro: React.FC<OpeningIntroProps> = ({ onComplete }) => {
           )}
         </button>
       </div>
-
-      {/* アンビエント発光エフェクト */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: [0.15, 0.35, 0.2], scale: [0.9, 1.15, 1] }}
-        transition={{ duration: 2.2, ease: 'easeInOut', repeat: Infinity, repeatType: 'reverse' }}
-        className="absolute w-[500px] h-[500px] rounded-full bg-gradient-to-tr from-neutral-800 via-red-950/30 to-neutral-700/20 blur-3xl pointer-events-none"
-      />
-
-      {/* 背景のグリッドライン */}
-      <div
-        className="absolute inset-0 opacity-[0.03] bg-[linear-gradient(to_right,#ffffff_1px,transparent_1px),linear-gradient(to_bottom,#ffffff_1px,transparent_1px)] bg-[size:4rem_4rem] pointer-events-none"
-        aria-hidden="true"
-      />
 
       {/* メインコンテンツ */}
       <div className="relative z-10 flex flex-col items-center text-center px-6 max-w-lg w-full">

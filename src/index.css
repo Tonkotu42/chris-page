@@ -1,9 +1,10 @@
+@import "@fontsource/dotgothic16/400.css";
 @import "tailwindcss";
 
 :root {
   color-scheme: dark;
-  font-family: Inter, "Segoe UI", sans-serif;
-  background: #08090d;
+  font-family: "DotGothic16", sans-serif;
+  background: #000;
   color: #f5f5f5;
 }
 
@@ -15,7 +16,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: #08090d;
+  background: #000;
 }
 
 a {

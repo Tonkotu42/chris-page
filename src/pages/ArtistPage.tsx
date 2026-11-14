@@ -107,7 +107,7 @@ export default function ArtistPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#0a0a0c] text-neutral-100 flex flex-col selection:bg-neutral-800 selection:text-white font-sans relative">
+    <div className="min-h-screen bg-black text-neutral-100 flex flex-col selection:bg-neutral-800 selection:text-white font-sans relative">
       <AnimatePresence>
         {showIntro && (
           <OpeningIntro
@@ -117,16 +117,11 @@ export default function ArtistPage() {
         )}
       </AnimatePresence>
 
-      <div
-        className="fixed inset-0 pointer-events-none opacity-20 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-neutral-700 via-neutral-950 to-black"
-        aria-hidden="true"
-      />
-
       <motion.header
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.7, delay: 0.1 }}
-        className="relative z-10 border-b border-neutral-900/80 backdrop-blur-md bg-[#0a0a0c]/80 sticky top-0"
+        className="relative z-10 border-b border-neutral-900/80 backdrop-blur-md bg-black/80 sticky top-0"
       >
         <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 shrink-0">
