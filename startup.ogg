@@ -1,6 +1,0 @@
-{
-  "name": "CHRIS - Official Site",
-  "description": "Official artist site for CHRIS featuring the music video Afterlife.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
