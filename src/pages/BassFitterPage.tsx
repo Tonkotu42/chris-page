@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowDown, ArrowLeft, Headphones, SlidersHorizontal, Waves } from 'lucide-react';
+import { SiteMenu } from '../components/SiteMenu';
 
 const controls = [
   {
@@ -181,9 +182,12 @@ export default function BassFitterPage() {
             <ArrowLeft className="h-4 w-4" />
             CHRIS
           </Link>
-          <span className="text-xs font-medium uppercase tracking-[0.3em] text-neutral-400">
-            BassFitter
-          </span>
+          <div className="flex items-center gap-4">
+            <span className="text-xs font-medium uppercase tracking-[0.3em] text-neutral-400">
+              BassFitter
+            </span>
+            <SiteMenu />
+          </div>
         </div>
       </header>
 

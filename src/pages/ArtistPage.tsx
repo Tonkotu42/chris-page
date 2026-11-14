@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Play,
@@ -15,6 +14,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { OpeningIntro } from '../components/OpeningIntro';
+import { SiteMenu } from '../components/SiteMenu';
 
 interface Track {
   id: string;
@@ -121,7 +121,7 @@ export default function ArtistPage() {
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.7, delay: 0.1 }}
-        className="relative z-10 border-b border-neutral-900/80 backdrop-blur-md bg-black/80 sticky top-0"
+        className="relative z-50 border-b border-neutral-900/80 backdrop-blur-md bg-black/80 sticky top-0"
       >
         <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 shrink-0">
@@ -134,35 +134,6 @@ export default function ArtistPage() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4">
-            <nav className="flex items-center gap-1.5 sm:gap-2 text-xs font-medium tracking-wider text-neutral-400 overflow-x-auto py-1">
-              {SOCIAL_LINKS.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <a
-                    key={item.id}
-                    id={`header-nav-${item.id}`}
-                    href={item.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-neutral-900 hover:text-white transition-colors duration-200"
-                    title={`${item.name}: ${item.handle}`}
-                  >
-                    <Icon className="w-3.5 h-3.5 shrink-0" />
-                    <span className="hidden md:inline">{item.name}</span>
-                  </a>
-                );
-              })}
-            </nav>
-
-            <Link
-              to="/bassfitter"
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-violet-500/30 bg-violet-500/10 hover:bg-violet-500/20 text-violet-100 transition-all duration-200 text-xs shrink-0 cursor-pointer"
-              title="BassFitter plugin page"
-            >
-              <Music2 className="w-3 h-3" />
-              <span className="text-[11px] font-mono">BassFitter</span>
-            </Link>
-
             <button
               id="replay-intro-btn"
               type="button"
@@ -173,6 +144,7 @@ export default function ArtistPage() {
               <Sparkles className="w-3 h-3 text-red-400" />
               <span className="text-[11px] font-mono">Intro</span>
             </button>
+            <SiteMenu />
           </div>
         </div>
       </motion.header>
