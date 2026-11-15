@@ -9,6 +9,9 @@ export type CassetteSide = {
 } | {
   kind: 'video';
   youtubeId: string;
+} | {
+  kind: 'soundcloud';
+  trackUrl: string;
 } | null;
 
 export interface Cassette {
