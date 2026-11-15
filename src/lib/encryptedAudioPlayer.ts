@@ -3,10 +3,48 @@ import { getSupabaseClient } from './supabaseClient';
 
 const audioBucket = 'audio-files';
 const workletUrl = '/audio-decrypter.js';
+const downloadTimeoutMs = 60_000;
+const processingTimeoutMs = 45_000;
+const workletTimeoutMs = 15_000;
 
 interface WorkletMessage {
   type: string;
   frame?: number;
+}
+
+function waitForOperation<T>(
+  operation: Promise<T>,
+  signal: AbortSignal,
+  timeoutMs: number,
+  timeoutMessage: string,
+) {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timeoutId = window.setTimeout(() => {
+      finish(() => reject(new Error(timeoutMessage)));
+    }, timeoutMs);
+    const onAbort = () => {
+      finish(() => reject(new DOMException('Audio loading was cancelled.', 'AbortError')));
+    };
+    const finish = (complete: () => void) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      signal.removeEventListener('abort', onAbort);
+      complete();
+    };
+
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+
+    signal.addEventListener('abort', onAbort, { once: true });
+    operation.then(
+      (value) => finish(() => resolve(value)),
+      (error: unknown) => finish(() => reject(error)),
+    );
+  });
 }
 
 function isEncryptedStoragePath(source: string) {
@@ -70,10 +108,16 @@ export class SupabaseWorkletAudioPlayer {
       let shouldDecrypt = false;
       if (typeof source === 'string') {
         if (isEncryptedStoragePath(source)) {
-          const { data, error } = await getSupabaseClient()
+          const download = getSupabaseClient()
             .storage
             .from(audioBucket)
             .download(source);
+          const { data, error } = await waitForOperation(
+            download,
+            controller.signal,
+            downloadTimeoutMs,
+            'Audio download timed out. Check your connection and Supabase settings, then retry.',
+          );
           if (error) throw new Error(`Could not download encrypted audio: ${error.message}`);
           if (!data) throw new Error('Supabase returned no audio data.');
           audioData = await data.arrayBuffer();
@@ -93,10 +137,15 @@ export class SupabaseWorkletAudioPlayer {
       const context = this.getContext();
       const workletModule = this.workletModule;
       if (!workletModule) throw new Error('The audio worklet could not be initialized.');
-      await workletModule.catch((error: unknown) => {
-        if (this.workletModule === workletModule) this.workletModule = null;
-        throw error;
-      });
+      await waitForOperation(
+        workletModule.catch((error: unknown) => {
+          if (this.workletModule === workletModule) this.workletModule = null;
+          throw error;
+        }),
+        controller.signal,
+        workletTimeoutMs,
+        'Loading the audio processor timed out. Please retry.',
+      );
       if (generation !== this.loadGeneration) {
         throw new DOMException('Audio loading was cancelled.', 'AbortError');
       }
@@ -116,7 +165,7 @@ export class SupabaseWorkletAudioPlayer {
 
       let buffer: AudioBuffer;
       if (shouldDecrypt) {
-        buffer = await new Promise<AudioBuffer>((resolve, reject) => {
+        const decryptAndDecode = new Promise<AudioBuffer>((resolve, reject) => {
           node.port.onmessage = ({ data }: MessageEvent<WorkletMessage & { audioBuffer?: ArrayBuffer; message?: string }>) => {
             if (this.node !== node) return;
             if (data.type === 'error') {
@@ -132,8 +181,19 @@ export class SupabaseWorkletAudioPlayer {
             key: getXorKey(),
           }, [audioData]);
         });
+        buffer = await waitForOperation(
+          decryptAndDecode,
+          controller.signal,
+          processingTimeoutMs,
+          'Audio decryption or decoding timed out. Please retry.',
+        );
       } else {
-        buffer = await context.decodeAudioData(audioData);
+        buffer = await waitForOperation(
+          context.decodeAudioData(audioData),
+          controller.signal,
+          processingTimeoutMs,
+          'Audio decoding timed out. Please retry.',
+        );
       }
 
       if (generation !== this.loadGeneration) {

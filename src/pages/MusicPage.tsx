@@ -179,6 +179,7 @@ export default function MusicPage() {
   const [storageError, setStorageError] = useState<string | null>(null);
   const [isAudioLoading, setIsAudioLoading] = useState(false);
   const [isAudioReady, setIsAudioReady] = useState(false);
+  const [audioLoadAttempt, setAudioLoadAttempt] = useState(0);
   const [waveformPeaks, setWaveformPeaks] = useState<number[]>([]);
   const [waveformError, setWaveformError] = useState<string | null>(null);
   const [playbackTime, setPlaybackTime] = useState(0);
@@ -341,7 +342,7 @@ export default function MusicPage() {
       cancelled = true;
       trackAudioPlayer.stop();
     };
-  }, [activeSideId, audioSource, currentSide?.kind, trackAudioPlayer]);
+  }, [activeSideId, audioLoadAttempt, audioSource, currentSide?.kind, trackAudioPlayer]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1284,7 +1285,18 @@ export default function MusicPage() {
                   </div>
                 ) : (
                   <div className="cdj-waveform-placeholder" role="status" aria-live="polite">
-                    {waveformError ?? (isAudioLoading ? 'Loading audio...' : 'Analyzing waveform...')}
+                    {waveformError ? (
+                      <>
+                        <span>{waveformError}</span>
+                        <button
+                          type="button"
+                          className="shrink-0 border border-white/30 px-2 py-1 text-[8px] uppercase tracking-[0.12em] text-white hover:border-[#f28a36]"
+                          onClick={() => setAudioLoadAttempt((attempt) => attempt + 1)}
+                        >
+                          Retry
+                        </button>
+                      </>
+                    ) : isAudioLoading ? 'Loading audio...' : 'Analyzing waveform...'}
                   </div>
                 )}
               </div>
