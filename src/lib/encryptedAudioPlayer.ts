@@ -57,6 +57,18 @@ function getXorKey() {
   return configuredKey;
 }
 
+function decryptAudio(audioData: ArrayBuffer, key: string) {
+  const keyBytes = new TextEncoder().encode(key);
+  if (keyBytes.length === 0) throw new Error('VITE_AUDIO_XOR_KEY must not be empty.');
+
+  const encryptedBytes = new Uint8Array(audioData);
+  const decryptedBytes = new Uint8Array(encryptedBytes.length);
+  for (let index = 0; index < encryptedBytes.length; index += 1) {
+    decryptedBytes[index] = encryptedBytes[index] ^ keyBytes[index % keyBytes.length];
+  }
+  return decryptedBytes.buffer;
+}
+
 export class SupabaseWorkletAudioPlayer {
   private context: AudioContext | null = null;
   private workletModule: Promise<void> | null = null;
@@ -105,7 +117,6 @@ export class SupabaseWorkletAudioPlayer {
 
     try {
       let audioData: ArrayBuffer;
-      let shouldDecrypt = false;
       if (typeof source === 'string') {
         if (isEncryptedStoragePath(source)) {
           const download = getSupabaseClient()
@@ -121,7 +132,7 @@ export class SupabaseWorkletAudioPlayer {
           if (error) throw new Error(`Could not download encrypted audio: ${error.message}`);
           if (!data) throw new Error('Supabase returned no audio data.');
           audioData = await data.arrayBuffer();
-          shouldDecrypt = true;
+          audioData = decryptAudio(audioData, getXorKey());
         } else {
           const response = await fetch(source, {
             credentials: 'same-origin',
@@ -163,38 +174,12 @@ export class SupabaseWorkletAudioPlayer {
       this.node = node;
       this.gainNode = gainNode;
 
-      let buffer: AudioBuffer;
-      if (shouldDecrypt) {
-        const decryptAndDecode = new Promise<AudioBuffer>((resolve, reject) => {
-          node.port.onmessage = ({ data }: MessageEvent<WorkletMessage & { audioBuffer?: ArrayBuffer; message?: string }>) => {
-            if (this.node !== node) return;
-            if (data.type === 'error') {
-              reject(new Error(data.message ?? 'The encrypted audio could not be decrypted.'));
-            } else if (data.type === 'decrypted' && data.audioBuffer) {
-              void context.decodeAudioData(data.audioBuffer).then(resolve, reject);
-            }
-          };
-          node.onprocessorerror = () => reject(new Error('The audio worklet processor failed.'));
-          node.port.postMessage({
-            type: 'decrypt',
-            encryptedAudio: audioData,
-            key: getXorKey(),
-          }, [audioData]);
-        });
-        buffer = await waitForOperation(
-          decryptAndDecode,
-          controller.signal,
-          processingTimeoutMs,
-          'Audio decryption or decoding timed out. Please retry.',
-        );
-      } else {
-        buffer = await waitForOperation(
-          context.decodeAudioData(audioData),
-          controller.signal,
-          processingTimeoutMs,
-          'Audio decoding timed out. Please retry.',
-        );
-      }
+      const buffer = await waitForOperation(
+        context.decodeAudioData(audioData),
+        controller.signal,
+        processingTimeoutMs,
+        'Audio decoding timed out. Please retry.',
+      );
 
       if (generation !== this.loadGeneration) {
         throw new DOMException('Audio loading was cancelled.', 'AbortError');

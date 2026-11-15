@@ -24,7 +24,7 @@ import {
   savePlaybackProgress,
 } from '../lib/musicStorage';
 import { SupabaseWorkletAudioPlayer } from '../lib/encryptedAudioPlayer';
-import { createWaveformPeaks, WebAudioPlayer } from '../lib/privateAudioPlayer';
+import { createWaveformPeaks, playTactileSwitchSound, WebAudioPlayer } from '../lib/privateAudioPlayer';
 import type { Cassette, CassetteSide } from '../lib/musicStorage';
 
 interface SoundCloudWidgetEvent {
@@ -173,6 +173,7 @@ export default function MusicPage() {
   const [isInserting, setIsInserting] = useState(false);
   const [dragOffset, setDragOffset] = useState(0);
   const [isFastForwarding, setIsFastForwarding] = useState(false);
+  const [isRewinding, setIsRewinding] = useState(false);
   const [isFlipping, setIsFlipping] = useState(false);
   const [editingSide, setEditingSide] = useState<SideName | null>(null);
   const [editedTitle, setEditedTitle] = useState('');
@@ -189,6 +190,7 @@ export default function MusicPage() {
   const [volume, setVolume] = useState(1);
   const [soundCloudReady, setSoundCloudReady] = useState(false);
   const pointerStartY = useRef<number | null>(null);
+  const pressedTransportKeysRef = useRef(new Set<HTMLButtonElement>());
   const [trackAudioPlayer] = useState(() => {
     const player = new SupabaseWorkletAudioPlayer();
     player.onEnded = () => setIsPlaying(false);
@@ -553,6 +555,41 @@ export default function MusicPage() {
     if (!event.repeat && (event.key === ' ' || event.key === 'Enter')) playButtonTouchSound();
   };
 
+  const playTactileSound = (phase: 'down' | 'up') => {
+    void playTactileSwitchSound(phase, volume * 0.55).catch(() => {
+      setStorageError('Mechanical switch sound could not be played.');
+    });
+  };
+
+  const pressTransportKey = (button: HTMLButtonElement) => {
+    if (pressedTransportKeysRef.current.has(button)) return;
+    pressedTransportKeysRef.current.add(button);
+    playTactileSound('down');
+  };
+
+  const releaseTransportKey = (button: HTMLButtonElement) => {
+    if (!pressedTransportKeysRef.current.delete(button)) return;
+    playTactileSound('up');
+  };
+
+  const handleTransportPointerDown = (event: PointerEvent<HTMLButtonElement>) => {
+    if (event.isPrimary && event.button === 0) pressTransportKey(event.currentTarget);
+  };
+
+  const handleTransportPointerUp = (event: PointerEvent<HTMLButtonElement>) => {
+    releaseTransportKey(event.currentTarget);
+  };
+
+  const handleTransportKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (!event.repeat && (event.key === ' ' || event.key === 'Enter')) {
+      pressTransportKey(event.currentTarget);
+    }
+  };
+
+  const handleTransportKeyUp = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === ' ' || event.key === 'Enter') releaseTransportKey(event.currentTarget);
+  };
+
   const selectTrackFromList = (track: TrackListItem) => {
     if (track.cassetteId === activeCassetteId && track.side === activeSide) {
       setIsPlayerExpanded(true);
@@ -792,6 +829,7 @@ export default function MusicPage() {
   };
 
   const beginRewind = () => {
+    setIsRewinding(true);
     if (currentSide?.kind === 'audio' && isAudioReady) {
       trackAudioPlayer.pause();
       saveProgress(true);
@@ -809,6 +847,7 @@ export default function MusicPage() {
   };
 
   const endRewind = () => {
+    setIsRewinding(false);
     if (rewindTimer.current !== null) {
       window.clearInterval(rewindTimer.current);
       rewindTimer.current = null;
@@ -1421,29 +1460,135 @@ export default function MusicPage() {
           </div>
 
           <div className="cdj-transport-controls" role="group" aria-label="Transport controls">
-            <button type="button" aria-label="Rewind" title="Hold to rewind" disabled={!currentSide} onPointerDown={(event) => { handleHardwareButtonPointerDown(event); beginRewind(); }} onPointerUp={endRewind} onPointerCancel={endRewind} onPointerLeave={endRewind} onKeyDown={handleHardwareButtonKeyDown} className="cdj-control-button">
+            <button
+              type="button"
+              aria-label="Rewind"
+              title="Hold to rewind"
+              data-led-state={isRewinding ? 'on-red' : undefined}
+              disabled={!currentSide}
+              onPointerDown={(event) => { handleTransportPointerDown(event); beginRewind(); }}
+              onPointerUp={(event) => { handleTransportPointerUp(event); endRewind(); }}
+              onPointerCancel={(event) => { handleTransportPointerUp(event); endRewind(); }}
+              onPointerLeave={(event) => { handleTransportPointerUp(event); endRewind(); }}
+              onLostPointerCapture={(event) => { handleTransportPointerUp(event); endRewind(); }}
+              onKeyDown={handleTransportKeyDown}
+              onKeyUp={handleTransportKeyUp}
+              className={`cdj-control-button ${isRewinding ? 'cdj-control-pressed' : ''}`}
+            >
               <span className="cdj-control-label">REW</span>
-              <Rewind className="cdj-control-icon" />
+              <span className="cdj-control-led" aria-hidden="true" />
+              <Rewind className="cdj-control-icon" aria-hidden="true" />
             </button>
-            <button type="button" aria-label="Previous cassette" onPointerDown={handleHardwareButtonPointerDown} onKeyDown={handleHardwareButtonKeyDown} onClick={() => changeCassette(-1)} disabled={!activeCassette} className="cdj-control-button cdj-control-light">
+            <button
+              type="button"
+              aria-label="Previous cassette"
+              disabled={!activeCassette}
+              onPointerDown={handleTransportPointerDown}
+              onPointerUp={handleTransportPointerUp}
+              onPointerCancel={handleTransportPointerUp}
+              onPointerLeave={handleTransportPointerUp}
+              onLostPointerCapture={handleTransportPointerUp}
+              onKeyDown={handleTransportKeyDown}
+              onKeyUp={handleTransportKeyUp}
+              onClick={() => changeCassette(-1)}
+              className="cdj-control-button cdj-control-light"
+            >
               <span className="cdj-control-label">PREV</span>
-              <SkipBack className="cdj-control-icon" />
+              <span className="cdj-control-led" aria-hidden="true" />
+              <SkipBack className="cdj-control-icon" aria-hidden="true" />
             </button>
-            <button type="button" aria-label={isPlaying ? 'Pause' : 'Play'} onPointerDown={handleHardwareButtonPointerDown} onKeyDown={handleHardwareButtonKeyDown} onClick={togglePlay} disabled={!currentSide || (currentSide.kind === 'audio' && !isAudioReady)} className={`cdj-control-button cdj-control-play ${isPlaying ? 'cdj-control-active' : ''}`}>
+            <button
+              type="button"
+              aria-label={isPlaying ? 'Pause' : 'Play'}
+              aria-pressed={isPlaying}
+              data-led-state={isPlaying ? 'on-green' : undefined}
+              disabled={!currentSide || (currentSide.kind === 'audio' && !isAudioReady)}
+              onPointerDown={handleTransportPointerDown}
+              onPointerUp={handleTransportPointerUp}
+              onPointerCancel={handleTransportPointerUp}
+              onPointerLeave={handleTransportPointerUp}
+              onLostPointerCapture={handleTransportPointerUp}
+              onKeyDown={handleTransportKeyDown}
+              onKeyUp={handleTransportKeyUp}
+              onClick={togglePlay}
+              className="cdj-control-button cdj-control-play"
+            >
               <span className="cdj-control-label">{isPlaying ? 'PAUSE' : 'PLAY'}</span>
-              {isPlaying ? <Pause className="cdj-control-icon" /> : <Play className="cdj-control-icon fill-current" />}
+              <span className="cdj-control-led" aria-hidden="true" />
+              {isPlaying
+                ? <Pause className="cdj-control-icon" aria-hidden="true" />
+                : <Play className="cdj-control-icon fill-current" aria-hidden="true" />}
             </button>
-            <button type="button" aria-label="Next cassette" onPointerDown={handleHardwareButtonPointerDown} onKeyDown={handleHardwareButtonKeyDown} onClick={() => changeCassette(1)} disabled={!activeCassette} className="cdj-control-button cdj-control-light">
+            <button
+              type="button"
+              aria-label="Next cassette"
+              disabled={!activeCassette}
+              onPointerDown={handleTransportPointerDown}
+              onPointerUp={handleTransportPointerUp}
+              onPointerCancel={handleTransportPointerUp}
+              onPointerLeave={handleTransportPointerUp}
+              onLostPointerCapture={handleTransportPointerUp}
+              onKeyDown={handleTransportKeyDown}
+              onKeyUp={handleTransportKeyUp}
+              onClick={() => changeCassette(1)}
+              className="cdj-control-button cdj-control-light"
+            >
               <span className="cdj-control-label">NEXT</span>
-              <SkipForward className="cdj-control-icon" />
+              <span className="cdj-control-led" aria-hidden="true" />
+              <SkipForward className="cdj-control-icon" aria-hidden="true" />
             </button>
-            <button type="button" aria-label="Fast forward" title="Hold to fast-forward" disabled={!currentSide || currentSide.kind === 'soundcloud'} onPointerDown={(event) => { handleHardwareButtonPointerDown(event); setIsFastForwarding(true); }} onPointerUp={() => setIsFastForwarding(false)} onPointerCancel={() => setIsFastForwarding(false)} onPointerLeave={() => setIsFastForwarding(false)} onKeyDown={handleHardwareButtonKeyDown} className={`cdj-control-button ${isFastForwarding ? 'cdj-control-active' : ''}`}>
+            <button
+              type="button"
+              aria-label="Fast forward"
+              title="Hold to fast-forward"
+              data-led-state={isFastForwarding ? 'on-red' : undefined}
+              disabled={!currentSide || currentSide.kind === 'soundcloud'}
+              onPointerDown={(event) => {
+                handleTransportPointerDown(event);
+                setIsFastForwarding(true);
+              }}
+              onPointerUp={(event) => {
+                handleTransportPointerUp(event);
+                setIsFastForwarding(false);
+              }}
+              onPointerCancel={(event) => {
+                handleTransportPointerUp(event);
+                setIsFastForwarding(false);
+              }}
+              onPointerLeave={(event) => {
+                handleTransportPointerUp(event);
+                setIsFastForwarding(false);
+              }}
+              onLostPointerCapture={(event) => {
+                handleTransportPointerUp(event);
+                setIsFastForwarding(false);
+              }}
+              onKeyDown={handleTransportKeyDown}
+              onKeyUp={handleTransportKeyUp}
+              className={`cdj-control-button ${isFastForwarding ? 'cdj-control-pressed' : ''}`}
+            >
               <span className="cdj-control-label">FWD</span>
-              <FastForward className="cdj-control-icon" />
+              <span className="cdj-control-led" aria-hidden="true" />
+              <FastForward className="cdj-control-icon" aria-hidden="true" />
             </button>
-            <button type="button" aria-label={isPlaying ? 'Stop' : 'Eject'} title={isPlaying ? 'Stop' : 'Eject cassette'} onPointerDown={handleHardwareButtonPointerDown} onKeyDown={handleHardwareButtonKeyDown} onClick={stopOrEject} disabled={!activeCassette} className="cdj-control-button cdj-control-light">
+            <button
+              type="button"
+              aria-label={isPlaying ? 'Stop' : 'Eject'}
+              title={isPlaying ? 'Stop' : 'Eject cassette'}
+              disabled={!activeCassette}
+              onPointerDown={handleTransportPointerDown}
+              onPointerUp={handleTransportPointerUp}
+              onPointerCancel={handleTransportPointerUp}
+              onPointerLeave={handleTransportPointerUp}
+              onLostPointerCapture={handleTransportPointerUp}
+              onKeyDown={handleTransportKeyDown}
+              onKeyUp={handleTransportKeyUp}
+              onClick={stopOrEject}
+              className="cdj-control-button cdj-control-light"
+            >
               <span className="cdj-control-label">{isPlaying ? 'STOP' : 'EJECT'}</span>
-              <Square className="cdj-control-icon fill-current" />
+              <span className="cdj-control-led" aria-hidden="true" />
+              <Square className="cdj-control-icon fill-current" aria-hidden="true" />
             </button>
           </div>
 
@@ -1451,8 +1596,13 @@ export default function MusicPage() {
             <button
               type="button"
               aria-label={`Flip to side ${activeSide === 'A' ? 'B' : 'A'}`}
-              onPointerDown={handleHardwareButtonPointerDown}
-              onKeyDown={handleHardwareButtonKeyDown}
+              onPointerDown={handleTransportPointerDown}
+              onPointerUp={handleTransportPointerUp}
+              onPointerCancel={handleTransportPointerUp}
+              onPointerLeave={handleTransportPointerUp}
+              onLostPointerCapture={handleTransportPointerUp}
+              onKeyDown={handleTransportKeyDown}
+              onKeyUp={handleTransportKeyUp}
               onClick={flipSide}
               disabled={!activeCassette}
               className="tp7-footer-key"
@@ -1464,8 +1614,13 @@ export default function MusicPage() {
             <button
               type="button"
               aria-label={activeCassette?.locked ? 'Unlock cassette' : 'Lock cassette'}
-              onPointerDown={handleHardwareButtonPointerDown}
-              onKeyDown={handleHardwareButtonKeyDown}
+              onPointerDown={handleTransportPointerDown}
+              onPointerUp={handleTransportPointerUp}
+              onPointerCancel={handleTransportPointerUp}
+              onPointerLeave={handleTransportPointerUp}
+              onLostPointerCapture={handleTransportPointerUp}
+              onKeyDown={handleTransportKeyDown}
+              onKeyUp={handleTransportKeyUp}
               onClick={() => activeCassette && persistCassette({ ...activeCassette, locked: !activeCassette.locked })}
               disabled={!activeCassette}
               className={`tp7-footer-key ${activeCassette?.locked ? 'is-locked' : ''}`}

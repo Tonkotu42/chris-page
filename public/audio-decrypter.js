@@ -10,9 +10,7 @@ class AudioDecrypterProcessor extends AudioWorkletProcessor {
     this.framesSinceReport = 0;
 
     this.port.onmessage = ({ data }) => {
-      if (data.type === 'decrypt') {
-        this.decrypt(data);
-      } else if (data.type === 'load') {
+      if (data.type === 'load') {
         this.channels = data.channels.map((channel) => new Float32Array(channel));
         this.frameCount = data.frameCount;
         this.position = 0;
@@ -35,23 +33,6 @@ class AudioDecrypterProcessor extends AudioWorkletProcessor {
         this.loop = Boolean(data.enabled);
       }
     };
-  }
-
-  decrypt({ encryptedAudio, key }) {
-    if (!(encryptedAudio instanceof ArrayBuffer) || typeof key !== 'string' || key.length === 0) {
-      this.port.postMessage({ type: 'error', message: 'Encrypted audio and a non-empty key are required.' });
-      return;
-    }
-
-    const keyBytes = new TextEncoder().encode(key);
-    const encryptedBytes = new Uint8Array(encryptedAudio);
-    const decryptedAudio = new ArrayBuffer(encryptedBytes.length);
-    const decryptedBytes = new Uint8Array(decryptedAudio);
-    for (let index = 0; index < encryptedBytes.length; index += 1) {
-      decryptedBytes[index] = encryptedBytes[index] ^ keyBytes[index % keyBytes.length];
-    }
-
-    this.port.postMessage({ type: 'decrypted', audioBuffer: decryptedAudio }, [decryptedAudio]);
   }
 
   process(_inputs, outputs) {
