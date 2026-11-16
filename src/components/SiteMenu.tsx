@@ -24,7 +24,7 @@ export function SiteMenu() {
   }, [isOpen]);
 
   return (
-    <div className="relative">
+    <div className="site-menu relative">
       <button
         type="button"
         aria-expanded={isOpen}
@@ -50,7 +50,7 @@ export function SiteMenu() {
           <nav
             id="site-menu-panel"
             aria-label="Main menu"
-            className="absolute right-0 top-[calc(100%+0.75rem)] z-40 w-56 overflow-hidden rounded-xl border border-white/15 bg-black/95 p-2 shadow-2xl backdrop-blur-xl"
+            className="site-menu-panel absolute right-0 top-[calc(100%+0.75rem)] z-40 w-56 overflow-hidden rounded-xl border border-white/15 bg-black/95 p-2 shadow-2xl backdrop-blur-xl"
           >
             {menuItems.map((item, index) => (
               <Link
@@ -60,7 +60,7 @@ export function SiteMenu() {
                 className="flex items-center justify-between rounded-lg px-4 py-3 text-sm tracking-[0.16em] text-neutral-200 transition hover:bg-white/10 hover:text-white"
               >
                 <span>{item.label}</span>
-                <span className="font-mono text-[10px] text-neutral-600">
+                <span className="text-[10px] text-neutral-600">
                   0{index + 1}
                 </span>
               </Link>

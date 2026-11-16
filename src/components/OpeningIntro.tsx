@@ -1,172 +1,190 @@
-import React, { useEffect, useState } from 'react';
-import { motion } from 'motion/react';
-import { Sparkles, ArrowRight, Volume2, VolumeX, Music } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Volume2, VolumeX } from 'lucide-react';
 import { startupAudio } from '../utils/audio';
+import { initialCassettes } from '../lib/musicCatalog';
+import './OpeningIntro.css';
 
 interface OpeningIntroProps {
   onComplete: () => void;
 }
 
-export const OpeningIntro: React.FC<OpeningIntroProps> = ({ onComplete }) => {
-  const [isMuted, setIsMuted] = useState<boolean>(startupAudio.getMuted());
+const BEAT_MS = 60_000 / 145;
+const INTRO_STYLE: React.CSSProperties & { '--opening-beat': string } = {
+  '--opening-beat': `${BEAT_MS}ms`,
+};
 
-  const handleEnter = () => {
-    // ユーザー指定の起動音を再生してメイン画面へ入場
-    startupAudio.playStartupSound();
-    onComplete();
+export const OpeningIntro: React.FC<OpeningIntroProps> = ({ onComplete }) => {
+  const [isMuted, setIsMuted] = useState(startupAudio.getMuted());
+  const [origin, setOrigin] = useState<{ x: number; y: number } | null>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const startedRef = useRef(false);
+  const timerRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+  }, []);
+
+  const handleEnter = (x: number, y: number) => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    void startupAudio.playStartupSound();
+
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      onComplete();
+      return;
+    }
+
+    overlayRef.current?.querySelectorAll<HTMLElement>('[data-intro-piece]').forEach((element, index) => {
+      const bounds = element.getBoundingClientRect();
+      const dx = window.innerWidth / 2 - (bounds.left + bounds.width / 2);
+      const dy = window.innerHeight / 2 - (bounds.top + bounds.height / 2);
+      const distance = Math.hypot(dx, dy) || 1;
+      const outwardX = -dx / distance * 28;
+      const outwardY = -dy / distance * 28;
+      const angle = index % 2 ? 18 : -18;
+      element.animate(
+        [
+          { transform: 'translate(0, 0) rotate(0deg) skew(0deg) scale(1)', filter: 'none', offset: 0, easing: 'steps(2, end)' },
+          { transform: `translate(${outwardX}px, ${outwardY}px) rotate(${angle}deg) skew(0deg) scale(1.15)`, filter: 'drop-shadow(6px 6px 0 #00ff66)', offset: 0.2, easing: 'cubic-bezier(0.75, 0, 0.9, 0)' },
+          { transform: `translate(${dx}px, ${dy}px) rotate(${-angle}deg) skew(${angle}deg) scale(0)`, filter: 'none', offset: 1 },
+        ],
+        { duration: BEAT_MS * 2.5, fill: 'forwards' },
+      );
+    });
+    setOrigin({ x, y });
+    timerRef.current = window.setTimeout(onComplete, BEAT_MS * 5);
   };
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        handleEnter();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [onComplete]);
-
-  const toggleMute = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const toggleMute = () => {
     const nextMuted = !isMuted;
     setIsMuted(nextMuted);
     startupAudio.setMuted(nextMuted);
   };
 
+  const handlePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.isPrimary && event.button === 0) handleEnter(event.clientX, event.clientY);
+  };
+
+  const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (event.detail === 0) handleEnter(window.innerWidth / 2, window.innerHeight / 2);
+  };
+
   return (
-    <motion.div
+    <div
+      ref={overlayRef}
       id="opening-intro-overlay"
-      role="button"
-      tabIndex={0}
-      aria-label="Click to enter CHRIS Official Site"
-      initial={{ opacity: 1 }}
-      exit={{
-        opacity: 0,
-        scale: 1.05,
-        filter: 'blur(12px)',
-        transition: { duration: 0.8, ease: [0.22, 1, 0.36, 1] },
-      }}
-      onClick={handleEnter}
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black text-white cursor-pointer select-none overflow-hidden outline-none"
+      className={`opening-intro${origin ? ' opening-intro-running' : ''}`}
+      style={INTRO_STYLE}
     >
-      {/* 右上サウンドコントロール */}
-      <div className="absolute top-6 right-6 z-20 flex items-center gap-2">
+      {['top', 'bottom'].map((part) => (
+        <div className={`opening-panel opening-panel-${part}`} aria-hidden="true" key={part}>
+          <div className="opening-panel-decoration">
+            <div className="opening-title-wall">
+              {Array.from({ length: 8 }, (_, row) => (
+                <div className="opening-title-row" key={row}>
+                  <div className="opening-title-track">
+                    {[0, 1].map((copy) => (
+                      <div className="opening-title-sequence" key={copy}>
+                        {initialCassettes.map((_, index) => {
+                          const cassette = initialCassettes[(index + row) % initialCassettes.length];
+                          return <span key={cassette.id}>{cassette.title}</span>;
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="opening-intro-trigger"
+        aria-label="Enter CHRIS Official Site"
+        aria-disabled={origin !== null}
+        onPointerDown={handlePointerDown}
+        onClick={handleClick}
+      />
+      <div data-intro-piece className="opening-sound-control">
         <button
           type="button"
           onClick={toggleMute}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-mono text-neutral-300 hover:text-white transition-colors cursor-pointer"
+          disabled={origin !== null}
+          className="opening-sound-button"
           title={isMuted ? '起動音をONにする' : '起動音をミュートする'}
         >
-          {isMuted ? (
-            <>
-              <VolumeX className="w-3.5 h-3.5 text-neutral-500" />
-              <span className="hidden sm:inline">Muted</span>
-            </>
-          ) : (
-            <>
-              <Volume2 className="w-3.5 h-3.5 text-red-400 animate-pulse" />
-              <span className="hidden sm:inline">Sound ON</span>
-            </>
-          )}
+          {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+          <span>{isMuted ? 'Muted' : 'Sound ON'}</span>
         </button>
       </div>
 
-      {/* メインコンテンツ */}
-      <div className="relative z-10 flex flex-col items-center text-center px-6 max-w-lg w-full">
-        {/* サウンド波形イコライザー演出 */}
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.1 }}
-          className="flex items-center gap-1 mb-8 h-6"
-        >
-          {[40, 75, 100, 60, 90, 45, 80, 55, 95, 70, 50].map((height, i) => (
-            <motion.span
-              key={i}
-              animate={{
-                height: isMuted
-                  ? '20%'
-                  : [`${height * 0.3}%`, `${height}%`, `${height * 0.4}%`],
-              }}
-              transition={{
-                duration: 0.8 + (i % 3) * 0.2,
-                repeat: Infinity,
-                ease: 'easeInOut',
-                delay: i * 0.06,
-              }}
-              className={`w-0.5 rounded-full transition-colors ${
-                isMuted ? 'bg-neutral-600' : 'bg-neutral-300'
-              }`}
-            />
-          ))}
-        </motion.div>
-
-        {/* アーティスト名 ロゴアニメーション */}
-        <motion.div
-          initial={{ opacity: 0, y: 20, letterSpacing: '0.2em' }}
-          animate={{ opacity: 1, y: 0, letterSpacing: '0.5em' }}
-          transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
-          className="relative"
-        >
-          <h1 className="text-4xl sm:text-6xl font-black uppercase text-white font-mono tracking-[0.5em] pl-[0.5em] drop-shadow-[0_0_25px_rgba(255,255,255,0.2)]">
-            CHRIS
+      <div className="opening-content">
+        <div className="opening-stage">
+          <div data-intro-piece className="opening-kicker-piece">
+            <div className="opening-kicker">OFFICIAL ARTIST SITE / 01</div>
+          </div>
+          <h1 className="opening-logo" aria-label="CHRIS">
+            {'CHRIS'.split('').map((letter, index) => (
+              <span data-intro-piece className={`opening-logo-piece opening-logo-piece-${index}`} aria-hidden="true" key={letter}>
+                <span className="opening-logo-tile"><span>{letter}</span></span>
+              </span>
+            ))}
           </h1>
-        </motion.div>
-
-        {/* サブタイトル / 最新曲タグ */}
-        <motion.div
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.4 }}
-          className="mt-4 flex flex-col items-center gap-2"
-        >
-          <div className="flex items-center gap-2 text-xs uppercase tracking-[0.3em] text-neutral-400 font-mono">
-            <span>Official Artist Site</span>
-          </div>
-
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.6, delay: 0.7 }}
-            className="mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-neutral-300 text-xs tracking-wider"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-red-400 animate-pulse" />
-            <span>New Video: Afterlife</span>
-          </motion.div>
-        </motion.div>
-
-        {/* クリック待機ボタン & ガイド */}
-        <motion.div
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.8 }}
-          className="mt-10 flex flex-col items-center gap-3"
-        >
-          <div
-            id="enter-site-button"
-            className="group relative inline-flex items-center gap-2.5 px-7 py-3 rounded-full border border-neutral-600 bg-neutral-900/90 hover:bg-neutral-800 hover:border-neutral-400 text-white transition-all duration-300 shadow-xl shadow-black/80 hover:scale-105 cursor-pointer"
-          >
-            <span className="text-xs font-mono font-bold tracking-[0.25em] uppercase pl-[0.25em]">
-              CLICK TO START
-            </span>
-            <ArrowRight className="w-3.5 h-3.5 text-neutral-400 group-hover:text-white group-hover:translate-x-1 transition-all" />
-          </div>
-
-          <div className="flex items-center gap-2 text-[11px] text-neutral-400 font-mono tracking-widest uppercase">
-            {!isMuted && <Music className="w-3 h-3 text-red-400 animate-pulse" />}
-            <motion.span
-              id="opening-click-to-start-guide"
-              animate={{ opacity: [0.4, 0.9, 0.4] }}
-              transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+          <div data-intro-piece className="opening-start-piece">
+            <button
+              type="button"
+              id="enter-site-button"
+              className="opening-start"
+              disabled={origin !== null}
+              onPointerDown={handlePointerDown}
+              onClick={handleClick}
             >
-              CLICK TO START
-            </motion.span>
+              <span>CLICK TO START</span><span className="opening-start-arrow" aria-hidden="true">-&gt;</span>
+            </button>
           </div>
-        </motion.div>
+        </div>
       </div>
-    </motion.div>
+
+      {origin && (
+        <div className="opening-effects" aria-hidden="true">
+          <div className="opening-impact" />
+          <div className="opening-strike-origin" style={{ left: origin.x, top: origin.y }}>
+            <span className="opening-pixel-ring opening-pixel-ring-green" />
+            <span className="opening-pixel-ring opening-pixel-ring-white" />
+            {Array.from({ length: 12 }, (_, index) => (
+              <span className={`opening-pixel-particle opening-pixel-particle-${index}`} key={index} />
+            ))}
+            <span className="opening-origin-slash opening-origin-slash-one" />
+            <span className="opening-origin-slash opening-origin-slash-two" />
+            <span className="opening-origin-slash opening-origin-slash-three" />
+          </div>
+          <span className="opening-core" />
+          {['main', 'top', 'bottom'].map((part) => (
+            <div className={`opening-welcome opening-welcome-${part}`} key={part}>
+              {'WELCOME'.split('').map((letter, index) => (
+                <span className={`opening-letter opening-letter-${index}`} key={index}>
+                  <span>{letter}</span>
+                </span>
+              ))}
+            </div>
+          ))}
+          <span className="opening-final-slash" />
+          <div className="opening-mosaic">
+            {Array.from({ length: 24 }, (_, index) => (
+              <span
+                key={index}
+                style={{
+                  left: `${(index % 6) * 17}%`,
+                  top: `${Math.floor(index / 6) * 25}%`,
+                  '--block-x': `${(index % 6 - 2.5) * 35}px`,
+                  '--block-y': `${(Math.floor(index / 6) - 1.5) * 45}px`,
+                } as React.CSSProperties}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
