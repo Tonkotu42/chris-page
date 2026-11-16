@@ -83,6 +83,8 @@ export class SupabaseWorkletAudioPlayer {
   private playbackRate = 1;
   private volume = 1;
   private playing = false;
+  public analyser: AnalyserNode | null = null;
+
 
   onEnded: (() => void) | null = null;
 
@@ -171,6 +173,13 @@ export class SupabaseWorkletAudioPlayer {
       const gainNode = context.createGain();
       gainNode.gain.value = this.volume;
       gainNode.connect(context.destination);
+
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0.8;
+      node.connect(analyser);
+      analyser.connect(gainNode); 
+      this.analyser = analyser;
       this.node = node;
       this.gainNode = gainNode;
 
