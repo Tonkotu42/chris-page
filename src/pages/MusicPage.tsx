@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Disc3,
   FastForward,
+  FlipHorizontal,
   LockKeyhole,
   Pause,
   Play,
@@ -13,7 +14,6 @@ import {
   SkipForward,
   Square,
   UnlockKeyhole,
-  Upload,
   X,
 } from 'lucide-react';
 import { SiteMenu } from '../components/SiteMenu';
@@ -23,7 +23,77 @@ import {
   saveCassette,
   savePlaybackProgress,
 } from '../lib/musicStorage';
+import { SupabaseWorkletAudioPlayer } from '../lib/encryptedAudioPlayer';
+import { createWaveformPeaks, WebAudioPlayer } from '../lib/privateAudioPlayer';
+import { createFrequencyWaveform, waveformBarsPerSecond } from '../lib/frequencyWaveform';
+import type { FrequencyWaveformBar } from '../lib/frequencyWaveform';
 import type { Cassette, CassetteSide } from '../lib/musicStorage';
+
+interface SoundCloudWidgetEvent {
+  currentPosition?: number;
+}
+
+interface SoundCloudWidget {
+  bind: (eventName: string, listener: (event?: SoundCloudWidgetEvent) => void) => void;
+  unbind: (eventName: string) => void;
+  play: () => void;
+  pause: () => void;
+  seekTo: (milliseconds: number) => void;
+  setVolume: (volume: number) => void;
+  getDuration: (callback: (duration: number) => void) => void;
+  getPosition: (callback: (position: number) => void) => void;
+  isPaused: (callback: (paused: boolean) => void) => void;
+}
+
+interface SoundCloudWidgetConstructor {
+  (iframeElement: HTMLIFrameElement): SoundCloudWidget;
+  Events: {
+    READY: string;
+    PLAY_PROGRESS: string;
+    PLAY: string;
+    PAUSE: string;
+    FINISH: string;
+    ERROR: string;
+  };
+}
+
+interface SoundCloudApi {
+  Widget: SoundCloudWidgetConstructor;
+}
+
+declare global {
+  interface Window {
+    SC?: SoundCloudApi;
+  }
+}
+
+let soundCloudApiPromise: Promise<void> | null = null;
+
+const loadSoundCloudWidgetApi = () => {
+  if (window.SC) return Promise.resolve();
+  if (soundCloudApiPromise) return soundCloudApiPromise;
+
+  soundCloudApiPromise = new Promise<void>((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://w.soundcloud.com/player/api.js';
+    script.async = true;
+    script.onload = () => {
+      if (window.SC) {
+        resolve();
+      } else {
+        soundCloudApiPromise = null;
+        reject(new Error('SoundCloud Widget API did not initialize.'));
+      }
+    };
+    script.onerror = () => {
+      soundCloudApiPromise = null;
+      reject(new Error('SoundCloud Widget API could not be loaded.'));
+    };
+    document.head.appendChild(script);
+  });
+
+  return soundCloudApiPromise;
+};
 
 type SideName = 'A' | 'B';
 
@@ -33,7 +103,7 @@ const initialCassettes: Cassette[] = [
     title: 'Afterlife',
     sideATitle: 'Afterlife',
     sideBTitle: 'SIDE B',
-    sideA: { kind: 'audio', src: '/music/afterlife.mp3', fileName: 'afterlife.mp3' },
+    sideA: { kind: 'audio', src: 'afterlife.bin', fileName: 'afterlife.mp3' },
     sideB: null,
     color: 'from-[#a3a3a3] via-[#33384a] to-[#090a10]',
     locked: true,
@@ -43,9 +113,29 @@ const initialCassettes: Cassette[] = [
     title: 'Done With U',
     sideATitle: 'Done With U',
     sideBTitle: 'SIDE B',
-    sideA: { kind: 'audio', src: '/music/done-with-u.mp3', fileName: 'd w you.mp3' },
+    sideA: { kind: 'audio', src: 'done-with-u.bin', fileName: 'Done with you.mp3' },
     sideB: null,
     color: 'from-[#b2a1c9] via-[#423448] to-[#090a10]',
+    locked: true,
+  },
+  {
+    id: 'make-me-up',
+    title: 'Make Me Up',
+    sideATitle: 'Make Me Up',
+    sideBTitle: 'SIDE B',
+    sideA: { kind: 'audio', src: 'make-me-up.bin', fileName: 'Make Me up.mp3' },
+    sideB: null,
+    color: 'from-[#c7a77b] via-[#57412b] to-[#090a10]',
+    locked: true,
+  },
+  {
+    id: 'voyage',
+    title: 'VOYAGE',
+    sideATitle: 'VOYAGE',
+    sideBTitle: 'SIDE B',
+    sideA: { kind: 'audio', src: 'voyage.bin', fileName: 'VOYAGE.mp3' },
+    sideB: null,
+    color: 'from-[#8f9eae] via-[#303c4b] to-[#090a10]',
     locked: true,
   },
 ];
@@ -66,12 +156,29 @@ interface ShelfPointerDrag {
   hasMoved: boolean;
 }
 
+interface TurntableDrag {
+  pointerId: number;
+  lastAngle: number;
+  lastTrackTime: number;
+  lastMoveTime: number;
+  wasPlaying: boolean;
+}
+
+interface TrackListItem {
+  cassetteId: string;
+  side: SideName;
+  title: string;
+  detail: string;
+  kind: 'audio' | 'video' | 'soundcloud';
+}
+
 export default function MusicPage() {
   const [cassettes, setCassettes] = useState(initialCassettes);
   const [activeCassetteId, setActiveCassetteId] = useState<string | null>(null);
   const [selectedCassetteId, setSelectedCassetteId] = useState<string | null>(null);
   const [activeSide, setActiveSide] = useState<SideName>('A');
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlayerExpanded, setIsPlayerExpanded] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [draggedTapeId, setDraggedTapeId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
@@ -83,17 +190,38 @@ export default function MusicPage() {
   const [editingSide, setEditingSide] = useState<SideName | null>(null);
   const [editedTitle, setEditedTitle] = useState('');
   const [storageError, setStorageError] = useState<string | null>(null);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [isAudioLoading, setIsAudioLoading] = useState(false);
+  const [isAudioReady, setIsAudioReady] = useState(false);
+  const [audioLoadAttempt, setAudioLoadAttempt] = useState(0);
+  const [waveformPeaks, setWaveformPeaks] = useState<number[]>([]);
+  const [frequencyWaveform, setFrequencyWaveform] = useState<FrequencyWaveformBar[]>([]);
+  const [frequencyWaveformError, setFrequencyWaveformError] = useState<string | null>(null);
+  const [waveformError, setWaveformError] = useState<string | null>(null);
   const [playbackTime, setPlaybackTime] = useState(0);
   const [playbackDuration, setPlaybackDuration] = useState(0);
+  const [isJogging, setIsJogging] = useState(false);
+  const [volume, setVolume] = useState(1);
+  const [soundCloudReady, setSoundCloudReady] = useState(false);
   const pointerStartY = useRef<number | null>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const turntablePointerId = useRef<number | null>(null);
+  const [trackAudioPlayer] = useState(() => {
+    const player = new SupabaseWorkletAudioPlayer();
+    player.onEnded = () => setIsPlaying(false);
+    return player;
+  });
+  const [insertionSoundPlayer] = useState(() => new WebAudioPlayer());
+  const [buttonClickPlayer] = useState(() => new WebAudioPlayer());
+  const reelFaceRef = useRef<HTMLDivElement>(null);
+  const turntableDragRef = useRef<TurntableDrag | null>(null);
+  const platterAngleRef = useRef(0);
+  const waveformDragRef = useRef<number | null>(null);
   const videoRef = useRef<HTMLIFrameElement>(null);
+  const soundCloudIframeRef = useRef<HTMLIFrameElement>(null);
+  const soundCloudWidgetRef = useRef<SoundCloudWidget | null>(null);
   const rewindTimer = useRef<number | null>(null);
-  const recordInputRef = useRef<HTMLInputElement>(null);
-  const newTapeInputRef = useRef<HTMLInputElement>(null);
   const progressSaveTimer = useRef<number | null>(null);
+  const progressWriteRef = useRef<Promise<void>>(Promise.resolve());
+  const progressGenerationRef = useRef(0);
+  const ejectedSideRef = useRef<string | null>(null);
   const playerRef = useRef<HTMLElement>(null);
   const shelfPointerDragRef = useRef<ShelfPointerDrag | null>(null);
   const suppressNextCassetteClickRef = useRef(false);
@@ -107,11 +235,32 @@ export default function MusicPage() {
   const currentSideTitle = activeCassette
     ? (activeSide === 'A' ? activeCassette.sideATitle : activeCassette.sideBTitle)
     : '';
+  const audioSource = currentSide?.kind === 'audio'
+    ? ('src' in currentSide ? currentSide.src : currentSide.blob)
+    : null;
   const activeSideId = activeCassette ? sideKey(activeCassette.id, activeSide) : null;
+  const availableTracks: TrackListItem[] = cassettes.flatMap((cassette) =>
+    (['A', 'B'] as const).flatMap((side) => {
+      const cassetteSide = side === 'A' ? cassette.sideA : cassette.sideB;
+      if (!cassetteSide) return [];
+      return [{
+        cassetteId: cassette.id,
+        side,
+        title: side === 'A' ? cassette.sideATitle : cassette.sideBTitle,
+        detail: cassetteSide.kind === 'audio'
+          ? cassetteSide.fileName
+          : cassetteSide.kind === 'video'
+            ? `VIDEO · ${cassetteSide.youtubeId}`
+            : 'SOUNDCLOUD',
+        kind: cassetteSide.kind,
+      }];
+    }),
+  );
 
   useEffect(() => {
     setPlaybackTime(0);
     setPlaybackDuration(0);
+    if (activeSideId && ejectedSideRef.current === activeSideId) ejectedSideRef.current = null;
   }, [activeSideId]);
 
   const sendVideoCommand = (func: string, args: unknown[] = []) => {
@@ -174,31 +323,169 @@ export default function MusicPage() {
   }, [isInserting, selectedCassette]);
 
   useEffect(() => {
-    if (currentSide?.kind !== 'audio') {
-      setAudioUrl(null);
-      return;
-    }
-    if ('src' in currentSide) {
-      setAudioUrl(currentSide.src);
+    let cancelled = false;
+    const waveformController = new AbortController();
+    setWaveformPeaks([]);
+    setFrequencyWaveform([]);
+    setFrequencyWaveformError(null);
+    setWaveformError(null);
+    setIsAudioReady(false);
+    setPlaybackTime(0);
+    setPlaybackDuration(0);
+
+    if (currentSide?.kind !== 'audio' || !audioSource) {
+      trackAudioPlayer.stop();
+      setIsAudioLoading(false);
       return;
     }
 
-    const url = URL.createObjectURL(currentSide.blob);
-    setAudioUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [activeSideId, currentSide]);
+    setIsAudioLoading(true);
+    const loadTrack = async () => {
+      try {
+        const buffer = await trackAudioPlayer.load(audioSource);
+        if (cancelled) return;
+        setPlaybackDuration(buffer.duration);
+        setWaveformPeaks(createWaveformPeaks(buffer));
+        setIsAudioReady(true);
+        void createFrequencyWaveform(buffer, waveformController.signal).then((bars) => {
+          if (!cancelled) setFrequencyWaveform(bars);
+        }).catch((error: unknown) => {
+          if (!cancelled) {
+            setFrequencyWaveformError(error instanceof Error ? error.message : 'Frequency waveform could not be analyzed.');
+          }
+        });
+      } catch (error) {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : 'Track audio could not be loaded.';
+        setWaveformError(message);
+        setStorageError(message);
+      } finally {
+        if (!cancelled) setIsAudioLoading(false);
+      }
+    };
+
+    void loadTrack();
+    return () => {
+      cancelled = true;
+      waveformController.abort();
+      trackAudioPlayer.stop();
+    };
+  }, [activeSideId, audioLoadAttempt, audioSource, currentSide?.kind, trackAudioPlayer]);
 
   useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio || !audioUrl || !activeSideId) return;
+    let cancelled = false;
+    const loadEffect = (
+      player: WebAudioPlayer,
+      source: string,
+      errorMessage: string,
+    ) => {
+      void player.load(source).catch(() => {
+        if (!cancelled) setStorageError(errorMessage);
+      });
+    };
+    loadEffect(insertionSoundPlayer, '/audio/cassette-insert.ogg', 'Cassette sound could not be loaded.');
+    loadEffect(buttonClickPlayer, '/audio/clicking.ogg', 'Button sound could not be loaded.');
+    return () => {
+      cancelled = true;
+      insertionSoundPlayer.stop();
+      buttonClickPlayer.stop();
+    };
+  }, [buttonClickPlayer, insertionSoundPlayer]);
+
+  useEffect(() => {
+    if (currentSide?.kind !== 'soundcloud') {
+      soundCloudWidgetRef.current = null;
+      setSoundCloudReady(false);
+      return;
+    }
+
+    const iframe = soundCloudIframeRef.current;
+    if (!iframe) return;
+    let cancelled = false;
+    let widget: SoundCloudWidget | null = null;
+
+    const initializeWidget = async () => {
+      try {
+        await loadSoundCloudWidgetApi();
+        if (cancelled || !window.SC) return;
+
+        const api = window.SC;
+        const activeWidget = api.Widget(iframe);
+        const events = api.Widget.Events;
+        widget = activeWidget;
+        soundCloudWidgetRef.current = activeWidget;
+        activeWidget.bind(events.READY, () => {
+          if (cancelled) return;
+          setSoundCloudReady(true);
+          activeWidget.getDuration((duration) => {
+            if (!cancelled) setPlaybackDuration(duration / 1000);
+          });
+          activeWidget.getPosition((position) => {
+            if (!cancelled) setPlaybackTime(position / 1000);
+          });
+        });
+        activeWidget.bind(events.PLAY_PROGRESS, (event) => {
+          if (cancelled || typeof event?.currentPosition !== 'number') return;
+          setPlaybackTime(event.currentPosition / 1000);
+          saveProgress();
+        });
+        const syncPlaybackState = () => {
+          activeWidget.isPaused((paused) => {
+            if (cancelled) return;
+            setIsPlaying(!paused);
+            if (paused) saveProgress(true);
+          });
+        };
+        activeWidget.bind(events.PLAY, syncPlaybackState);
+        activeWidget.bind(events.PAUSE, syncPlaybackState);
+        activeWidget.bind(events.FINISH, () => {
+          if (!cancelled) {
+            setIsPlaying(false);
+            saveProgress(true);
+          }
+        });
+        activeWidget.bind(events.ERROR, () => {
+          if (!cancelled) {
+            setIsPlaying(false);
+            setStorageError('The SoundCloud track could not be played.');
+          }
+        });
+      } catch {
+        if (!cancelled) setStorageError('The SoundCloud player could not be initialized.');
+      }
+    };
+
+    void initializeWidget();
+    return () => {
+      cancelled = true;
+      if (widget && window.SC) {
+        Object.values(window.SC.Widget.Events).forEach((event) => widget?.unbind(event));
+        widget.pause();
+      }
+      if (soundCloudWidgetRef.current === widget) soundCloudWidgetRef.current = null;
+      setSoundCloudReady(false);
+    };
+  }, [activeSideId, currentSide?.kind]);
+
+  useEffect(() => {
+    const widget = soundCloudWidgetRef.current;
+    if (!activeSideId) return;
+    if (currentSide?.kind === 'audio' && !isAudioReady) return;
+    if (currentSide?.kind === 'soundcloud' && (!soundCloudReady || !widget)) return;
+    if (currentSide?.kind !== 'audio' && currentSide?.kind !== 'soundcloud') return;
     let cancelled = false;
     const restorePosition = async () => {
       try {
+        await progressWriteRef.current;
         const seconds = await loadPlaybackProgress(activeSideId);
-        if (!cancelled && seconds > 0) {
-          audio.currentTime = Math.min(seconds, Number.isFinite(audio.duration) ? audio.duration : seconds);
+        if (cancelled || seconds <= 0) return;
+        if (currentSide.kind === 'audio') {
+          const position = Math.min(seconds, trackAudioPlayer.duration);
+          await trackAudioPlayer.seek(position);
+          setPlaybackTime(position);
+        } else if (currentSide?.kind === 'soundcloud') {
+          widget?.seekTo(seconds * 1000);
         }
-        if (!cancelled && isPlaying) await audio.play();
       } catch {
         if (!cancelled) setStorageError('Playback position could not be restored.');
       }
@@ -207,19 +494,26 @@ export default function MusicPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeSideId, audioUrl]);
+  }, [activeSideId, currentSide?.kind, isAudioReady, soundCloudReady, trackAudioPlayer]);
 
   useEffect(() => {
-    if (currentSide?.kind !== 'audio' || !audioRef.current || !audioUrl) return;
-    if (isPlaying) {
-      void audioRef.current.play().catch(() => {
-        setIsPlaying(false);
-        setStorageError('This audio file could not be played by the browser.');
-      });
-    } else {
-      audioRef.current.pause();
+    if (currentSide?.kind === 'soundcloud' && soundCloudReady) {
+      const widget = soundCloudWidgetRef.current;
+      if (isPlaying) widget?.play();
+      else if (!isJogging) widget?.pause();
+      return;
     }
-  }, [audioUrl, currentSide, isPlaying]);
+    if (currentSide?.kind !== 'audio') return;
+    if (isPlaying) {
+      if (!isAudioReady) return;
+      void trackAudioPlayer.play().catch(() => {
+        setIsPlaying(false);
+        setStorageError('This audio could not be played by the browser.');
+      });
+    } else if (!isJogging) {
+      trackAudioPlayer.pause();
+    }
+  }, [currentSide, isAudioReady, isJogging, isPlaying, soundCloudReady, trackAudioPlayer]);
 
   useEffect(() => {
     if (currentSide?.kind !== 'video') return;
@@ -232,15 +526,50 @@ export default function MusicPage() {
   }, [currentSide, isPlaying]);
 
   useEffect(() => {
-    const audio = audioRef.current;
-    if (audio) audio.playbackRate = isFastForwarding ? 4 : 1;
-  }, [isFastForwarding]);
+    trackAudioPlayer.setVolume(volume);
+    insertionSoundPlayer.setVolume(volume * 0.6);
+    buttonClickPlayer.setVolume(volume * 0.55);
+    if (currentSide?.kind === 'video') sendVideoCommand('setVolume', [Math.round(volume * 100)]);
+    if (currentSide?.kind === 'soundcloud' && soundCloudReady) {
+      soundCloudWidgetRef.current?.setVolume(Math.round(volume * 100));
+    }
+  }, [buttonClickPlayer, currentSide, insertionSoundPlayer, soundCloudReady, trackAudioPlayer, volume]);
+
+  useEffect(() => {
+    trackAudioPlayer.setPlaybackRate(isFastForwarding && !isJogging ? 4 : 1);
+  }, [isFastForwarding, isJogging, trackAudioPlayer]);
+
+  useEffect(() => {
+    if (!isPlaying || isJogging) return;
+    let lastTime = performance.now();
+    let animationFrame = 0;
+    const rotate = (time: number) => {
+      platterAngleRef.current = (platterAngleRef.current + (time - lastTime) / 100) % 360;
+      lastTime = time;
+      if (reelFaceRef.current) {
+        reelFaceRef.current.style.transform = `rotate(${platterAngleRef.current}deg)`;
+      }
+      animationFrame = requestAnimationFrame(rotate);
+    };
+    animationFrame = requestAnimationFrame(rotate);
+    return () => cancelAnimationFrame(animationFrame);
+  }, [isJogging, isPlaying]);
+
+  useEffect(() => () => {
+    turntableDragRef.current = null;
+    trackAudioPlayer.endScratch();
+    setIsJogging(false);
+  }, [activeSideId, trackAudioPlayer]);
 
   useEffect(() => () => {
     if (rewindTimer.current !== null) window.clearInterval(rewindTimer.current);
     if (progressSaveTimer.current !== null) window.clearTimeout(progressSaveTimer.current);
     if (insertionTimerRef.current !== null) window.clearTimeout(insertionTimerRef.current);
-  }, []);
+    trackAudioPlayer.stop();
+    insertionSoundPlayer.stop();
+    soundCloudWidgetRef.current?.pause();
+    buttonClickPlayer.stop();
+  }, [buttonClickPlayer, insertionSoundPlayer, trackAudioPlayer]);
 
   const persistCassette = (cassette: Cassette) => {
     setCassettes((current) => current.map((item) => item.id === cassette.id ? cassette : item));
@@ -249,10 +578,48 @@ export default function MusicPage() {
     });
   };
 
+  const playCassetteInsertSound = () => {
+    if (!insertionSoundPlayer.isReady) return;
+    void insertionSoundPlayer.play({ restart: true }).catch(() => {
+      setStorageError('Cassette insertion sound could not be played.');
+    });
+  };
+
+  const playButtonTouchSound = () => {
+    if (!buttonClickPlayer.isReady) return;
+    void buttonClickPlayer.play({ restart: true }).catch(() => {
+      setStorageError('Button click sound could not be played.');
+    });
+  };
+
+  const handleHardwareButtonPointerDown = (event: PointerEvent<HTMLButtonElement>) => {
+    if (event.isPrimary && event.button === 0) playButtonTouchSound();
+  };
+
+  const handleHardwareButtonKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (!event.repeat && (event.key === ' ' || event.key === 'Enter')) playButtonTouchSound();
+  };
+
+  const selectTrackFromList = (track: TrackListItem) => {
+    if (track.cassetteId === activeCassetteId && track.side === activeSide) {
+      setIsPlayerExpanded(true);
+      return;
+    }
+    if (currentSide?.kind === 'audio') saveProgress(true);
+    setActiveCassetteId(track.cassetteId);
+    setActiveSide(track.side);
+    setIsPlaying(false);
+    setIsFastForwarding(false);
+    setIsPlayerExpanded(true);
+  };
+
   const startInsertion = (cassette: Cassette) => {
+    if (currentSide?.kind === 'audio') saveProgress(true);
+    playCassetteInsertSound();
     setActiveCassetteId(cassette.id);
     setActiveSide('A');
-    setIsPlaying(cassette.sideA !== null);
+    setIsPlaying(false);
+    setIsPlayerExpanded(true);
     setIsInserting(true);
     if (insertionTimerRef.current !== null) window.clearTimeout(insertionTimerRef.current);
     insertionTimerRef.current = window.setTimeout(() => {
@@ -280,11 +647,14 @@ export default function MusicPage() {
   };
 
   const insertCassetteFromDrop = (cassette: Cassette) => {
+    if (currentSide?.kind === 'audio') saveProgress(true);
+    playCassetteInsertSound();
     setActiveCassetteId(cassette.id);
     setActiveSide('A');
     setSelectedCassetteId(null);
     setIsInserting(false);
-    setIsPlaying(cassette.sideA !== null);
+    setIsPlaying(false);
+    setIsPlayerExpanded(true);
     setSnappedTapeId(cassette.id);
   };
 
@@ -310,6 +680,7 @@ export default function MusicPage() {
     drag.hasMoved = true;
     setDraggedTapeId(drag.cassetteId);
     setIsDragging(true);
+    setIsPlayerExpanded(true);
     const hoveredCassette = document
       .elementFromPoint(event.clientX, event.clientY)
       ?.closest<HTMLButtonElement>('[data-cassette-id]');
@@ -399,93 +770,68 @@ export default function MusicPage() {
 
   const togglePlay = () => {
     if (!activeCassette || !currentSide) return;
-    setIsPlaying((playing) => !playing);
+    const shouldPlay = !isPlaying;
+    if (currentSide.kind === 'audio') {
+      if (shouldPlay) {
+        if (!isAudioReady) return;
+        void trackAudioPlayer.play().catch(() => {
+          setIsPlaying(false);
+          setStorageError('This audio could not be played by the browser.');
+        });
+      } else {
+        trackAudioPlayer.pause();
+        saveProgress(true);
+      }
+    } else if (currentSide.kind === 'soundcloud') {
+      if (shouldPlay) soundCloudWidgetRef.current?.play();
+      else soundCloudWidgetRef.current?.pause();
+    }
+    setIsPlaying(shouldPlay);
   };
 
   const changeCassette = (direction: -1 | 1) => {
     if (!activeCassette) return;
+    if (currentSide?.kind === 'audio') saveProgress(true);
     const index = cassettes.findIndex((cassette) => cassette.id === activeCassette.id);
     const next = cassettes[(index + direction + cassettes.length) % cassettes.length];
     setActiveCassetteId(next.id);
     setActiveSide('A');
-    setIsPlaying(true);
+    setIsPlaying(false);
   };
 
   const stopOrEject = () => {
     if (!activeCassette) return;
+    if (currentSide?.kind === 'audio') {
+      trackAudioPlayer.pause();
+    }
     if (isPlaying) {
+      saveProgress(true);
       setIsPlaying(false);
       return;
     }
+    progressGenerationRef.current += 1;
+    ejectedSideRef.current = activeSideId;
+    if (progressSaveTimer.current !== null) {
+      window.clearTimeout(progressSaveTimer.current);
+      progressSaveTimer.current = null;
+    }
+    if (activeSideId && (currentSide?.kind === 'audio' || currentSide?.kind === 'soundcloud')) {
+      queueProgressSave(activeSideId, 0);
+    }
+    trackAudioPlayer.stop();
+    soundCloudWidgetRef.current?.pause();
+    soundCloudWidgetRef.current?.seekTo(0);
+    setPlaybackTime(0);
     setActiveCassetteId(null);
     setIsPlaying(false);
   };
 
   const flipSide = () => {
     if (!activeCassette) return;
+    if (currentSide?.kind === 'audio') saveProgress(true);
     setIsPlaying(false);
     setActiveSide((side) => side === 'A' ? 'B' : 'A');
     setIsFlipping(true);
-  };
-
-  const handleAudioUpload = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.currentTarget.files?.[0];
-    event.currentTarget.value = '';
-    if (!file) return;
-    const side: CassetteSide = { kind: 'audio', blob: file, fileName: file.name };
-
-    if (!activeCassette) {
-      const title = file.name.replace(/\.[^.]+$/, '') || 'Untitled Tape';
-      const cassette: Cassette = {
-        id: `tape-${crypto.randomUUID()}`,
-        title,
-        sideATitle: title,
-        sideBTitle: 'SIDE B',
-        sideA: side,
-        sideB: null,
-        color: tapeColors[cassettes.length % tapeColors.length],
-        locked: false,
-      };
-      setCassettes((current) => [...current, cassette]);
-      void saveCassette(cassette).catch(() => {
-        setStorageError('The uploaded tape could not be saved.');
-      });
-      setActiveCassetteId(cassette.id);
-      setActiveSide('A');
-      setIsPlaying(true);
-      return;
-    }
-
-    if (activeCassette.locked) {
-      setStorageError('Unlock this cassette before recording onto it.');
-      return;
-    }
-    const updated = activeSide === 'A'
-      ? { ...activeCassette, sideA: side, sideATitle: file.name.replace(/\.[^.]+$/, '') || 'SIDE A' }
-      : { ...activeCassette, sideB: side, sideBTitle: file.name.replace(/\.[^.]+$/, '') || 'SIDE B' };
-    persistCassette(updated);
-    setIsPlaying(true);
-  };
-
-  const handleNewTapeUpload = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.currentTarget.files?.[0];
-    event.currentTarget.value = '';
-    if (!file) return;
-    const title = file.name.replace(/\.[^.]+$/, '') || 'Untitled Tape';
-    const cassette: Cassette = {
-      id: `tape-${crypto.randomUUID()}`,
-      title,
-      sideATitle: title,
-      sideBTitle: 'SIDE B',
-      sideA: { kind: 'audio', blob: file, fileName: file.name },
-      sideB: null,
-      color: tapeColors[cassettes.length % tapeColors.length],
-      locked: false,
-    };
-    setCassettes((current) => [...current, cassette]);
-    void saveCassette(cassette).catch(() => {
-      setStorageError('The uploaded tape could not be saved.');
-    });
   };
 
   const createBlankCassette = () => {
@@ -506,13 +852,19 @@ export default function MusicPage() {
   };
 
   const beginRewind = () => {
-    if (currentSide?.kind === 'audio' && audioRef.current) {
+    if (currentSide?.kind === 'audio' && isAudioReady) {
+      trackAudioPlayer.pause();
+      saveProgress(true);
       setIsPlaying(false);
       rewindTimer.current = window.setInterval(() => {
-        if (audioRef.current) audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime - 2);
+        void trackAudioPlayer.seek(Math.max(0, trackAudioPlayer.currentTime - 2)).catch(() => {
+          setStorageError('The track could not be rewound.');
+        });
       }, 160);
     } else if (currentSide?.kind === 'video') {
       sendVideoCommand('seekTo', [0, true]);
+    } else if (currentSide?.kind === 'soundcloud') {
+      soundCloudWidgetRef.current?.seekTo(0);
     }
   };
 
@@ -521,17 +873,32 @@ export default function MusicPage() {
       window.clearInterval(rewindTimer.current);
       rewindTimer.current = null;
     }
+    if (currentSide?.kind === 'audio') saveProgress(true);
+  };
+
+  const queueProgressSave = (key: string, seconds: number) => {
+    progressWriteRef.current = progressWriteRef.current.then(() => savePlaybackProgress(key, seconds)).catch(() => {
+      setStorageError('Playback position could not be saved.');
+    });
   };
 
   const saveProgress = (immediate = false) => {
-    if (!activeSideId || !audioRef.current) return;
+    const audio = currentSide?.kind === 'audio' ? trackAudioPlayer : null;
+    const widget = currentSide?.kind === 'soundcloud' ? soundCloudWidgetRef.current : null;
+    if (!activeSideId || ejectedSideRef.current === activeSideId || (!audio && !widget)) return;
     if (progressSaveTimer.current !== null) window.clearTimeout(progressSaveTimer.current);
     const key = activeSideId;
-    const seconds = audioRef.current.currentTime;
+    const generation = progressGenerationRef.current;
+    const audioPosition = audio?.currentTime;
     const save = () => {
-      void savePlaybackProgress(key, seconds).catch(() => {
-        setStorageError('Playback position could not be saved.');
-      });
+      if (generation !== progressGenerationRef.current) return;
+      if (audio) {
+        queueProgressSave(key, audioPosition ?? 0);
+      } else {
+        widget?.getPosition((position) => {
+          if (generation === progressGenerationRef.current) queueProgressSave(key, position / 1000);
+        });
+      }
     };
     if (immediate) {
       save();
@@ -540,38 +907,172 @@ export default function MusicPage() {
     }
   };
 
-  const seekTurntable = (event: PointerEvent<HTMLDivElement>) => {
-    const audio = audioRef.current;
-    if (!audio || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+  useEffect(() => {
+    if (currentSide?.kind !== 'audio' || !isPlaying) return;
+    const timer = window.setInterval(() => {
+      setPlaybackTime(trackAudioPlayer.currentTime);
+      saveProgress();
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [currentSide?.kind, isPlaying, trackAudioPlayer]);
+
+  const seekWaveform = (event: PointerEvent<HTMLDivElement>) => {
+    if (!canSeekWaveform || !trackAudioPlayer.isReady || trackAudioPlayer.duration <= 0) return;
     const bounds = event.currentTarget.getBoundingClientRect();
-    const angle = (Math.atan2(
+    const progress = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
+    const position = progress * trackAudioPlayer.duration;
+    void trackAudioPlayer.seek(position).catch(() => {
+      setStorageError('The track could not be seeked.');
+    });
+    setPlaybackTime(position);
+  };
+
+  const startWaveformDrag = (event: PointerEvent<HTMLDivElement>) => {
+    if (!canSeekWaveform || !event.isPrimary || event.button !== 0) return;
+    event.preventDefault();
+    waveformDragRef.current = event.pointerId;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    seekWaveform(event);
+  };
+
+  const moveWaveform = (event: PointerEvent<HTMLDivElement>) => {
+    if (waveformDragRef.current === event.pointerId) seekWaveform(event);
+  };
+
+  const endWaveformDrag = (event: PointerEvent<HTMLDivElement>, shouldSeek: boolean) => {
+    if (waveformDragRef.current !== event.pointerId) return;
+    if (shouldSeek) seekWaveform(event);
+    waveformDragRef.current = null;
+    saveProgress(true);
+  };
+
+  const turntableAngle = (event: PointerEvent<HTMLDivElement>) => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    return Math.atan2(
       event.clientY - bounds.top - bounds.height / 2,
       event.clientX - bounds.left - bounds.width / 2,
-    ) * 180 / Math.PI + 450) % 360;
-    const seconds = angle / 360 * audio.duration;
-    audio.currentTime = seconds;
-    setPlaybackTime(seconds);
+    );
+  };
+
+  const startTurntableDrag = (event: PointerEvent<HTMLDivElement>) => {
+    const audio = currentSide?.kind === 'audio' && isAudioReady ? trackAudioPlayer : null;
+    const widget = currentSide?.kind === 'soundcloud' ? soundCloudWidgetRef.current : null;
+    if (!canSeekTurntable || (!audio && !widget) || !event.isPrimary || event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    audio?.pause();
+    widget?.pause();
+    turntableDragRef.current = {
+      pointerId: event.pointerId,
+      lastAngle: turntableAngle(event),
+      lastTrackTime: audio?.currentTime ?? playbackTime,
+      lastMoveTime: event.timeStamp,
+      wasPlaying: isPlaying,
+    };
+    if (audio) {
+      void audio.beginScratch().catch(() => {
+        if (turntableDragRef.current?.pointerId !== event.pointerId) return;
+        audio.endScratch();
+        setStorageError('The track scratch sound could not be played.');
+      });
+    } else {
+      setStorageError('Scratch audio is unavailable for SoundCloud tracks.');
+    }
+    setIsJogging(true);
+    if (isPlaying) setIsPlaying(false);
+  };
+
+  const moveTurntable = (event: PointerEvent<HTMLDivElement>) => {
+    const drag = turntableDragRef.current;
+    const audio = currentSide?.kind === 'audio' && isAudioReady ? trackAudioPlayer : null;
+    const widget = currentSide?.kind === 'soundcloud' ? soundCloudWidgetRef.current : null;
+    if (!drag || drag.pointerId !== event.pointerId || (!audio && !widget)) return;
+    const angle = turntableAngle(event);
+    let angleDelta = angle - drag.lastAngle;
+    if (angleDelta > Math.PI) angleDelta -= Math.PI * 2;
+    if (angleDelta < -Math.PI) angleDelta += Math.PI * 2;
+    drag.lastAngle = angle;
+    if (Math.abs(angleDelta) <= 0.002) return;
+    const secondsPerRevolution = 8;
+    const timeDelta = angleDelta / (Math.PI * 2) * secondsPerRevolution;
+    const previousTrackTime = drag.lastTrackTime;
+    drag.lastTrackTime = Math.max(
+      0,
+      Math.min(playbackDuration, drag.lastTrackTime + timeDelta),
+    );
+    if (audio) {
+      audio.scratch(previousTrackTime, drag.lastTrackTime, Math.max(0.02, Math.min(0.12, (event.timeStamp - drag.lastMoveTime) / 1000)));
+    }
+    else widget?.seekTo(drag.lastTrackTime * 1000);
+    drag.lastMoveTime = event.timeStamp;
+    platterAngleRef.current = (platterAngleRef.current + angleDelta * 180 / Math.PI) % 360;
+    if (reelFaceRef.current) {
+      reelFaceRef.current.style.transform = `rotate(${platterAngleRef.current}deg)`;
+    }
+    setPlaybackTime(drag.lastTrackTime);
+    saveProgress();
+  };
+
+  const endTurntableDrag = (event: PointerEvent<HTMLDivElement>, resumePlayback: boolean) => {
+    const drag = turntableDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    turntableDragRef.current = null;
+    setIsJogging(false);
+    trackAudioPlayer.endScratch();
+    trackAudioPlayer.pause();
+    soundCloudWidgetRef.current?.pause();
+    saveProgress(true);
+    if (resumePlayback && drag.wasPlaying && currentSide?.kind === 'audio') {
+      void trackAudioPlayer.play().then(() => setIsPlaying(true)).catch(() => {
+        setStorageError('This audio could not be resumed.');
+      });
+    } else if (resumePlayback && drag.wasPlaying) {
+      setIsPlaying(true);
+    }
   };
 
   const handleTurntableKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const audio = audioRef.current;
-    if (!audio || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+    const audio = currentSide?.kind === 'audio' && isAudioReady ? trackAudioPlayer : null;
+    const widget = currentSide?.kind === 'soundcloud' ? soundCloudWidgetRef.current : null;
+    const duration = audio?.duration ?? playbackDuration;
+    const currentTime = audio?.currentTime ?? playbackTime;
+    if ((!audio && !widget) || !Number.isFinite(duration) || duration <= 0) return;
     let seconds: number | null = null;
-    if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') seconds = audio.currentTime - 5;
-    if (event.key === 'ArrowRight' || event.key === 'ArrowUp') seconds = audio.currentTime + 5;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') seconds = currentTime - 5;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowUp') seconds = currentTime + 5;
     if (event.key === 'Home') seconds = 0;
-    if (event.key === 'End') seconds = audio.duration;
+    if (event.key === 'End') seconds = duration;
     if (seconds === null) return;
     event.preventDefault();
-    audio.currentTime = Math.max(0, Math.min(audio.duration, seconds));
-    setPlaybackTime(audio.currentTime);
+    const newTime = Math.max(0, Math.min(duration, seconds));
+    if (audio) {
+      void audio.seek(newTime).catch(() => {
+        setStorageError('The track could not be seeked.');
+      });
+    }
+    else widget?.seekTo(newTime * 1000);
+    setPlaybackTime(newTime);
     saveProgress(true);
   };
 
   const turntableProgress = playbackDuration > 0
     ? Math.min(1, playbackTime / playbackDuration)
     : 0;
-  const canSeekTurntable = currentSide?.kind === 'audio' && playbackDuration > 0;
+  const canSeekTurntable = playbackDuration > 0 && (
+    (currentSide?.kind === 'audio' && isAudioReady)
+    || (currentSide?.kind === 'soundcloud' && soundCloudReady)
+  );
+  const canSeekWaveform = canSeekTurntable && waveformPeaks.length > 0;
+  const zoomBarCount = waveformBarsPerSecond * 10;
+  const zoomCenter = playbackDuration > 0
+    ? Math.floor(playbackTime / playbackDuration * frequencyWaveform.length)
+    : 0;
+  const formattedDeckTime = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const wholeSeconds = Math.floor(seconds % 60).toString().padStart(2, '0');
+    const hundredths = Math.floor((seconds % 1) * 100).toString().padStart(2, '0');
+    return `${minutes}:${wholeSeconds}.${hundredths}`;
+  };
   const formattedPlaybackTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60);
     const remainder = Math.floor(seconds % 60).toString().padStart(2, '0');
@@ -610,24 +1111,11 @@ export default function MusicPage() {
         <section aria-label="Cassette shelf" className="mt-8">
           <div className="mb-3 flex items-center justify-between">
             <p className="text-[10px] uppercase tracking-[0.28em] text-neutral-500">TAPE COLLECTION</p>
-            <div className="flex items-center gap-4">
-              <button type="button" onClick={createBlankCassette} className="text-[9px] uppercase tracking-[0.18em] text-neutral-500 transition hover:text-white">
-                + Blank tape
-              </button>
-              <label className="flex cursor-pointer items-center gap-1.5 text-[9px] uppercase tracking-[0.18em] text-neutral-500 transition hover:text-white">
-                <Upload className="h-3 w-3" />
-                Add audio tape
-                <input
-                  ref={newTapeInputRef}
-                  type="file"
-                  accept="audio/*"
-                  onChange={handleNewTapeUpload}
-                  className="sr-only"
-                />
-              </label>
-            </div>
+            <button type="button" onClick={createBlankCassette} className="text-[9px] uppercase tracking-[0.18em] text-neutral-500 transition hover:text-white">
+              + Blank tape
+            </button>
           </div>
-          <div className="flex min-h-[86px] items-end justify-center gap-2 overflow-x-auto border-b border-white/20 px-2 pb-2 sm:justify-start sm:gap-3">
+          <div className="cassette-shelf-grid">
             {cassettes.map((cassette) => (
               <button
                 key={cassette.id}
@@ -646,22 +1134,26 @@ export default function MusicPage() {
                   setSelectedCassetteId(cassette.id);
                   setDragOffset(0);
                 }}
-                className={`group relative flex h-[68px] w-[116px] shrink-0 items-center rounded-t-md border border-white/20 bg-gradient-to-br ${cassette.color} px-2 text-left shadow-[0_8px_18px_#000] transition duration-200 hover:-translate-y-1 hover:border-white/50 ${
+                className={`cassette-shelf-tape group relative flex items-center border border-white/20 bg-gradient-to-br ${cassette.color} text-left shadow-[0_8px_18px_#000] transition duration-200 hover:-translate-y-1 hover:border-white/50 ${
                   activeCassetteId === cassette.id ? 'brightness-125' : 'brightness-90 hover:brightness-110'
                 } ${dropTargetId === cassette.id ? 'cassette-drop-target' : ''} ${
                   snappedTapeId === cassette.id ? 'cassette-snap-in' : ''
                 } ${draggedTapeId === cassette.id ? 'cassette-being-dragged' : ''}`}
               >
-                <span className="absolute inset-x-1 top-1 h-1 rounded-full bg-white/25" />
-                <span className="mr-2 flex h-10 w-6 flex-col items-center justify-center gap-1 rounded-sm border border-white/25 bg-black/55">
+                <span className="cassette-shelf-tape-seam" />
+                <span className="flex h-9 w-7 shrink-0 flex-col items-center justify-center gap-1 rounded-sm border border-white/25 bg-black/65">
                   <span className="h-2 w-2 rounded-full border border-white/60" />
                   <span className="h-2 w-2 rounded-full border border-white/60" />
                 </span>
-                <span className="min-w-0">
+                <span className="cassette-shelf-label ml-2 min-w-0 flex-1">
                   <span className="block truncate text-[9px] uppercase tracking-[0.12em] text-white">{cassette.title}</span>
-                  <span className="mt-1 block text-[7px] uppercase tracking-[0.18em] text-white/50">
-                    CHRIS · VHS {cassette.locked ? '· LOCKED' : ''}
+                  <span className="mt-1 block truncate text-[7px] uppercase tracking-[0.18em] text-white/50">
+                    CHRIS · SIDE A {cassette.locked ? '· LOCKED' : ''}
                   </span>
+                </span>
+                <span aria-hidden="true" className="ml-2 flex shrink-0 flex-col gap-1 text-[6px] text-white/40">
+                  <span>90</span>
+                  <span>TYPE I</span>
                 </span>
               </button>
             ))}
@@ -687,9 +1179,20 @@ export default function MusicPage() {
         )}
       </main>
 
-      <div
-        className="fixed inset-x-0 bottom-0 z-30 px-2 pb-2 sm:px-6 sm:pb-4"
-      >
+      <div className={`tp7-player-drawer fixed inset-x-0 bottom-0 z-30 px-2 pb-2 sm:px-6 sm:pb-4 ${isPlayerExpanded ? 'is-open' : 'is-closed'}`}>
+        <button
+          type="button"
+          aria-expanded={isPlayerExpanded}
+          aria-controls="cassette-deck"
+          onPointerDown={handleHardwareButtonPointerDown}
+          onKeyDown={handleHardwareButtonKeyDown}
+          onClick={() => setIsPlayerExpanded((expanded) => !expanded)}
+          className="tp7-drawer-trigger"
+        >
+          <span className="tp7-drawer-label">CHRIS // FIELD PLAYER</span>
+          <span className="tp7-drawer-led" />
+          <span className="tp7-drawer-instruction">{isPlayerExpanded ? 'TAP TO HIDE' : 'TAP TO OPEN'}</span>
+        </button>
         {isDragging && (
           <div
             className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[24px] border-2 border-dashed border-[#f28a36] bg-[#090909]/95 text-xs tracking-[0.2em] text-[#f28a36] shadow-2xl"
@@ -699,209 +1202,375 @@ export default function MusicPage() {
         )}
         <section
           ref={playerRef}
+          id="cassette-deck"
           aria-label="Cassette player"
-          className={`tp7-inspired-deck relative mx-auto w-full max-w-[300px] overflow-hidden rounded-[4px] border border-white/15 px-3 py-3 text-neutral-100 shadow-[0_22px_80px_#000,0_2px_8px_rgb(255_255_255_/_0.06)] transition sm:rounded-[5px] sm:px-4 sm:py-4 ${isDragging ? 'scale-[1.01]' : ''}`}
+          aria-hidden={!isPlayerExpanded}
+          inert={!isPlayerExpanded}
+          className={`tp7-inspired-deck relative mx-auto w-full max-w-[500px] overflow-hidden rounded-[8px] border border-[#414349] px-3 py-3 text-[#e4e5e8] shadow-[0_14px_28px_rgb(0_0_0_/_55%)] transition sm:px-5 sm:py-5 ${isDragging ? 'scale-[1.01]' : ''}`}
         >
-          <div className="flex items-center justify-between border-b border-white/10 pb-2">
+          <div className="tp7-unit-header flex items-center justify-between border-b border-white/10 pb-2">
             <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-[#f28a36] shadow-[0_0_0_3px_rgb(242_138_54_/_0.12),0_0_10px_rgb(242_138_54_/_0.65)]" />
-              <span className="text-[8px] font-semibold uppercase tracking-[0.28em] text-neutral-400">CHRIS / TAPE RECORDER</span>
+              <span className={`tp7-status-led ${isPlaying ? 'is-active' : ''}`} />
+              <span className="text-[8px] font-semibold uppercase tracking-[0.22em] text-neutral-400">CHRIS // FIELD PLAYER</span>
             </div>
             <span className="font-mono text-[8px] uppercase tracking-[0.16em] text-neutral-500">
-              {activeCassette ? `SIDE ${activeSide} · ${isPlaying ? 'PLAY' : 'STOP'}` : 'READY'}
+              {activeCassette
+                ? `SIDE ${activeSide} · ${isAudioLoading ? 'LOADING' : isPlaying ? 'PLAY' : 'STANDBY'}`
+                : 'STANDBY'}
             </span>
           </div>
 
-          <div className="mx-auto flex w-full max-w-[280px] flex-col items-center py-2 sm:max-w-[320px]">
-            <div
-              role="slider"
-              aria-label="Track position"
-              aria-valuemin={0}
-              aria-valuemax={Math.floor(playbackDuration)}
-              aria-valuenow={Math.floor(playbackTime)}
-              aria-valuetext={`${formattedPlaybackTime(playbackTime)} of ${formattedPlaybackTime(playbackDuration)}`}
-              aria-disabled={!canSeekTurntable}
-              tabIndex={canSeekTurntable ? 0 : -1}
-              onKeyDown={handleTurntableKeyDown}
-              onPointerDown={(event) => {
-                if (!canSeekTurntable || !event.isPrimary || event.button !== 0) return;
-                event.preventDefault();
-                turntablePointerId.current = event.pointerId;
-                event.currentTarget.setPointerCapture(event.pointerId);
-                seekTurntable(event);
-              }}
-              onPointerMove={(event) => {
-                if (turntablePointerId.current === event.pointerId) seekTurntable(event);
-              }}
-              onPointerUp={(event) => {
-                if (turntablePointerId.current !== event.pointerId) return;
-                seekTurntable(event);
-                turntablePointerId.current = null;
-                saveProgress(true);
-              }}
-              onPointerCancel={() => {
-                turntablePointerId.current = null;
-                saveProgress(true);
-              }}
-              onAnimationEnd={(event) => {
-                if (event.animationName === 'cassette-flip') setIsFlipping(false);
-              }}
-              style={{
-                background: `conic-gradient(from 0deg, #f28a36 ${turntableProgress * 100}%, rgb(255 255 255 / 14%) ${turntableProgress * 100}% 100%)`,
-              }}
-              className={`tp7-reel-face relative flex aspect-square w-[168px] touch-none select-none items-center justify-center rounded-full p-[3px] outline-none sm:w-[196px] ${
-                canSeekTurntable ? 'cursor-crosshair focus-visible:ring-2 focus-visible:ring-[#f28a36]/70' : 'cursor-default'
-              } ${
-                activeCassette ? 'cassette-deck-snap' : ''
-              } ${isFlipping ? 'cassette-flip' : ''}`}
-            >
-              <div className={`tp7-reel-face-inner pointer-events-none absolute inset-[3px] flex items-center justify-center overflow-hidden rounded-full border border-white/15 bg-[radial-gradient(circle_at_36%_28%,#333937,#171b19_58%,#0a0c0b)] shadow-[inset_0_2px_5px_rgb(255_255_255_/_0.12),inset_0_-8px_16px_rgb(0_0_0_/_0.8),0_3px_8px_#000] ${
-                isPlaying ? 'tape-reel-spinning' : ''
-              }`}>
-                <span className="absolute inset-[7px] rounded-full border border-white/[0.08]" />
-                <span className="absolute inset-[15px] rounded-full border border-white/[0.06]" />
-                <span className="absolute inset-[25px] rounded-full border border-dashed border-white/[0.07]" />
-                <div className="tp7-reel-hub relative flex h-12 w-12 items-center justify-center rounded-full border border-[#5b625e] bg-[radial-gradient(circle_at_36%_30%,#545b57,#282e2b_62%,#111412)] shadow-[inset_0_1px_3px_rgb(255_255_255_/_0.2),0_2px_6px_#000] sm:h-14 sm:w-14">
-                  <span className="absolute inset-[6px] rounded-full border border-white/10" />
-                  <span className="h-2 w-2 rounded-full bg-[#f28a36] shadow-[0_0_8px_rgb(242_138_54_/_0.55)]" />
-                </div>
+          <div className="tp7-player-content mx-auto flex w-full max-w-full flex-col items-center py-3">
+            <div className="tp7-display-panel">
+              <div className="tp7-display-topline">
+                <span className={`tp7-display-state ${isPlaying ? 'is-active' : ''}`}>
+                  {isAudioLoading ? 'LOAD' : isPlaying ? 'PLAY' : 'STP'}
+                </span>
+                <span>{currentSide ? `TRK 01/01 · SIDE ${activeSide}` : 'NO TAPE LOADED'}</span>
+                <span className="ml-auto">
+                  {currentSide?.kind === 'soundcloud'
+                    ? 'SC'
+                    : currentSide ? isFastForwarding ? '2.00x' : '1.00x' : '--'}
+                </span>
               </div>
-              <span
-                className="pointer-events-none absolute inset-0 z-10"
-                style={{ transform: `rotate(${turntableProgress * 360}deg)` }}
-              >
-                <span className="absolute left-1/2 top-[4px] h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[#ffd0a5] bg-[#f28a36] shadow-[0_0_8px_#f28a36]" />
-              </span>
-            </div>
-
-            <div className="flex w-[168px] justify-between px-1 pt-1 font-mono text-[7px] tabular-nums tracking-[0.12em] text-neutral-500 sm:w-[196px]">
-              <span>{formattedPlaybackTime(playbackTime)}</span>
-              <span>{formattedPlaybackTime(playbackDuration)}</span>
-            </div>
-
-            <div className="mt-2 flex w-full items-center gap-2 border-y border-white/10 py-2">
-              <div className="flex min-w-0 flex-1 items-center gap-2">
-                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${isPlaying ? 'bg-[#f28a36]' : 'bg-neutral-700'}`} />
-                <div className="min-w-0 flex-1">
-                  <p className="font-mono text-[7px] uppercase tracking-[0.2em] text-neutral-500">SIDE {activeSide} / {isPlaying ? 'PLAYING' : 'STANDBY'}</p>
-                  {activeCassette && editingSide === activeSide ? (
-                    <input
-                      autoFocus
-                      value={editedTitle}
-                      onChange={(event) => setEditedTitle(event.currentTarget.value)}
-                      onBlur={() => updateSideTitle(activeSide)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') updateSideTitle(activeSide);
-                        if (event.key === 'Escape') setEditingSide(null);
+              <div className="tp7-display-track-row">
+                <div className="tp7-display-track-main">
+                  <p className="tp7-display-time">{formattedDeckTime(playbackTime)}</p>
+                  <div className="min-w-0 flex-1">
+                    {activeCassette && editingSide === activeSide ? (
+                      <input
+                        autoFocus
+                        value={editedTitle}
+                        onChange={(event) => setEditedTitle(event.currentTarget.value)}
+                        onBlur={() => updateSideTitle(activeSide)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') updateSideTitle(activeSide);
+                          if (event.key === 'Escape') setEditingSide(null);
+                        }}
+                        aria-label="Tape side title"
+                        className="tp7-track-title-input"
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={!activeCassette}
+                        onClick={() => {
+                          if (!activeCassette) return;
+                          setEditedTitle(currentSideTitle);
+                          setEditingSide(activeSide);
+                        }}
+                        className="tp7-track-title"
+                        title="Rename this side"
+                      >
+                        {activeCassette ? currentSideTitle : 'NO TAPE LOADED'}
+                      </button>
+                    )}
+                    <p className="tp7-track-file">
+                      {currentSide?.kind === 'audio'
+                        ? currentSide.fileName
+                        : currentSide?.kind === 'video'
+                          ? isPlaying ? 'VIDEO INPUT · PLAYING' : 'VIDEO INPUT · STANDBY'
+                          : currentSide?.kind === 'soundcloud'
+                            ? 'SOUNDCLOUD STREAM'
+                            : activeCassette ? 'BLANK SIDE' : 'INSERT CASSETTE TO BEGIN'}
+                    </p>
+                  </div>
+                </div>
+                {currentSide?.kind === 'video' && (
+                  <div className="tp7-video-window">
+                    <iframe
+                      ref={videoRef}
+                      key={`${activeCassetteId}:${activeSide}`}
+                      title={`${currentSideTitle} YouTube player`}
+                      src={`https://www.youtube-nocookie.com/embed/${currentSide.youtubeId}?autoplay=1&enablejsapi=1&rel=0&origin=${encodeURIComponent(window.location.origin)}`}
+                      onLoad={() => {
+                        sendVideoCommand(isPlaying ? 'playVideo' : 'pauseVideo');
+                        sendVideoCommand('setPlaybackRate', [isFastForwarding ? 2 : 1]);
+                        sendVideoCommand('setVolume', [Math.round(volume * 100)]);
                       }}
-                      aria-label="Tape side title"
-                      className="mt-1 w-full border-b border-white/30 bg-transparent text-xs text-white outline-none"
+                      className="aspect-video w-full"
+                      allow="autoplay; encrypted-media; picture-in-picture"
+                      allowFullScreen
                     />
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={!activeCassette}
-                      onClick={() => {
-                        if (!activeCassette) return;
-                        setEditedTitle(currentSideTitle);
-                        setEditingSide(activeSide);
-                      }}
-                      className="mt-1 block max-w-full truncate text-left text-xs font-semibold text-neutral-100 disabled:cursor-default sm:text-sm"
-                      title="Rename this side"
-                    >
-                      {activeCassette ? currentSideTitle : 'No cassette loaded'}
-                    </button>
-                  )}
-                  <p className="mt-0.5 truncate font-mono text-[7px] uppercase tracking-[0.1em] text-neutral-600">
-                    {currentSide?.kind === 'audio'
-                      ? currentSide.fileName
-                      : currentSide?.kind === 'video'
-                        ? isPlaying ? 'Playing video' : 'Paused'
-                        : activeCassette ? 'Blank side · record a file' : 'Drop a tape to begin'}
-                  </p>
-                </div>
+                  </div>
+                )}
               </div>
-              {currentSide?.kind === 'video' && (
-                <div className="w-[88px] shrink-0 overflow-hidden rounded border border-white/10 bg-black">
+              {currentSide?.kind === 'soundcloud' && (
+                <div className="tp7-soundcloud-window">
                   <iframe
-                    ref={videoRef}
+                    ref={soundCloudIframeRef}
                     key={`${activeCassetteId}:${activeSide}`}
-                    title={`${currentSideTitle} YouTube player`}
-                    src={`https://www.youtube-nocookie.com/embed/${currentSide.youtubeId}?autoplay=1&enablejsapi=1&rel=0&origin=${encodeURIComponent(window.location.origin)}`}
-                    onLoad={() => {
-                      sendVideoCommand(isPlaying ? 'playVideo' : 'pauseVideo');
-                      sendVideoCommand('setPlaybackRate', [isFastForwarding ? 2 : 1]);
-                    }}
-                    className="aspect-video w-full"
-                    allow="autoplay; encrypted-media; picture-in-picture"
-                    allowFullScreen
+                    title={`${currentSideTitle} SoundCloud player`}
+                    src={`https://w.soundcloud.com/player/?url=${encodeURIComponent(currentSide.trackUrl)}&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&download=false&visual=false&color=%23ff4a1c`}
+                    allow="autoplay; encrypted-media"
                   />
                 </div>
               )}
+            {currentSide?.kind === 'audio' && (
+              <div className="w-full">
+                <div className="mb-1 flex items-center justify-between font-mono text-[7px] uppercase tracking-[0.16em] text-neutral-500">
+                  <span>Waveform</span>
+                  <span>{formattedPlaybackTime(playbackTime)} / {formattedPlaybackTime(playbackDuration)}</span>
+                </div>
+                {waveformPeaks.length > 0 ? (
+                  <>
+                  <div className="cdj-frequency-header">
+                    <span>10 SEC DETAIL</span>
+                    <span><b className="cdj-frequency-low">LOW</b> / <b className="cdj-frequency-mid">MID</b> / <b className="cdj-frequency-high">HIGH</b></span>
+                  </div>
+                  {frequencyWaveform.length > 0 ? (
+                    <div className="cdj-frequency-waveform" role="img" aria-label="10 second waveform around the current position, colored by low, mid and high frequencies">
+                      {Array.from({ length: zoomBarCount }, (_, index) => {
+                        const bar = frequencyWaveform[zoomCenter - zoomBarCount / 2 + index];
+                        const energy = bar ? bar.low + bar.mid + bar.high : 0;
+                        const lowEnd = energy ? bar.low / energy * 100 : 0;
+                        const midEnd = energy ? (bar.low + bar.mid) / energy * 100 : 0;
+                        return (
+                          <span
+                            key={index}
+                            className="cdj-frequency-bar"
+                            style={{
+                              height: bar ? `${Math.max(3, bar.peak * 100)}%` : '0%',
+                              background: energy
+                                ? `linear-gradient(to top, #ff6552 ${lowEnd}%, #e8c252 ${lowEnd}% ${midEnd}%, #63bdf5 ${midEnd}%)`
+                                : 'transparent',
+                            }}
+                          />
+                        );
+                      })}
+                      <span className="cdj-frequency-playhead" aria-hidden="true" />
+                    </div>
+                  ) : (
+                    <div className="cdj-frequency-placeholder" role="status">
+                      {frequencyWaveformError ?? 'Analyzing frequency waveform...'}
+                    </div>
+                  )}
+                  <div
+                    role="slider"
+                    aria-label="Track waveform seek"
+                    aria-valuemin={0}
+                    aria-valuemax={Math.floor(playbackDuration)}
+                    aria-valuenow={Math.floor(playbackTime)}
+                    aria-valuetext={`${formattedPlaybackTime(playbackTime)} of ${formattedPlaybackTime(playbackDuration)}`}
+                    aria-disabled={!canSeekWaveform}
+                    tabIndex={canSeekWaveform ? 0 : -1}
+                    title="Click or drag the waveform to seek"
+                    onKeyDown={handleTurntableKeyDown}
+                    onPointerDown={startWaveformDrag}
+                    onPointerMove={moveWaveform}
+                    onPointerUp={(event) => endWaveformDrag(event, true)}
+                    onPointerCancel={(event) => endWaveformDrag(event, false)}
+                    onLostPointerCapture={(event) => endWaveformDrag(event, false)}
+                    className={`cdj-waveform ${canSeekWaveform ? 'cursor-ew-resize focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#f28a36]' : 'cursor-wait'}`}
+                  >
+                    {waveformPeaks.map((peak, index) => (
+                      <span
+                        key={index}
+                        aria-hidden="true"
+                        className={`cdj-waveform-bar ${
+                          (index + 0.5) / waveformPeaks.length <= turntableProgress
+                            ? 'cdj-waveform-bar-played'
+                            : ''
+                        }`}
+                        style={{ height: `${Math.max(8, peak * 100)}%` }}
+                      />
+                    ))}
+                    <span
+                      aria-hidden="true"
+                      className="cdj-waveform-playhead"
+                      style={{ left: `${turntableProgress * 100}%` }}
+                    />
+                  </div>
+                  </>
+                ) : (
+                  <div className="cdj-waveform-placeholder" role="status" aria-live="polite">
+                    {waveformError ? (
+                      <>
+                        <span>{waveformError}</span>
+                        <button
+                          type="button"
+                          className="shrink-0 border border-white/30 px-2 py-1 text-[8px] uppercase tracking-[0.12em] text-white hover:border-[#f28a36]"
+                          onClick={() => setAudioLoadAttempt((attempt) => attempt + 1)}
+                        >
+                          Retry
+                        </button>
+                      </>
+                    ) : isAudioLoading ? 'Loading audio...' : 'Analyzing waveform...'}
+                  </div>
+                )}
+              </div>
+            )}
+            {currentSide === null && (
+              <div className="tp7-display-empty">
+                {activeCassette ? 'BLANK SIDE' : 'INSERT CASSETTE TO BEGIN'}
+              </div>
+            )}
             </div>
-          </div>
 
-          <div className="flex items-center justify-center gap-1.5 border-t border-white/10 pt-2 sm:gap-2.5">
-            <button type="button" aria-label="Rewind" title="Hold to rewind" disabled={!currentSide} onPointerDown={beginRewind} onPointerUp={endRewind} onPointerCancel={endRewind} onPointerLeave={endRewind} className="tp7-key">
-              <Rewind className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
-            </button>
-            <button type="button" aria-label="Previous cassette" onClick={() => changeCassette(-1)} disabled={!activeCassette} className="tp7-key">
-              <SkipBack className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
-            </button>
-            <button type="button" aria-label={isPlaying ? 'Pause' : 'Play'} onClick={togglePlay} disabled={!currentSide} className="tp7-key tp7-play-key">
-              {isPlaying ? <Pause className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> : <Play className="h-3.5 w-3.5 fill-current sm:h-4 sm:w-4" />}
-            </button>
-            <button type="button" aria-label="Next cassette" onClick={() => changeCassette(1)} disabled={!activeCassette} className="tp7-key">
-              <SkipForward className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
-            </button>
-            <button type="button" aria-label="Fast forward" title="Hold to fast-forward" disabled={!currentSide} onPointerDown={() => setIsFastForwarding(true)} onPointerUp={() => setIsFastForwarding(false)} onPointerCancel={() => setIsFastForwarding(false)} onPointerLeave={() => setIsFastForwarding(false)} className={`tp7-key ${isFastForwarding ? 'tp7-key-active' : ''}`}>
-              <FastForward className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
-            </button>
-            <button type="button" aria-label={isPlaying ? 'Stop' : 'Eject'} title={isPlaying ? 'Stop' : 'Eject cassette'} onClick={stopOrEject} disabled={!activeCassette} className="tp7-key">
-              <Square className="h-3 w-3 fill-current sm:h-3.5 sm:w-3.5" />
-            </button>
-          </div>
-
-          <div className="mt-2 flex items-center justify-between border-t border-white/10 pt-2">
-            <div className="flex items-center gap-3">
-              <button type="button" onClick={flipSide} disabled={!activeCassette} className="tp7-label-key">
-                FLIP · SIDE {activeSide === 'A' ? 'B' : 'A'}
-              </button>
-              <button type="button" onClick={() => activeCassette && persistCassette({ ...activeCassette, locked: !activeCassette.locked })} disabled={!activeCassette} className="tp7-label-key flex items-center gap-1">
-                {activeCassette?.locked ? <LockKeyhole className="h-3 w-3" /> : <UnlockKeyhole className="h-3 w-3" />}
-                {activeCassette?.locked ? 'LOCKED' : 'UNLOCKED'}
-              </button>
+            <div className="tp7-drive-header">
+              <span>VIRTUAL DIRECT DRIVE</span>
+              <span>{isJogging ? 'SCRUB' : isPlaying ? 'MOTOR ACTIVE' : 'IDLE // STANDBY'}</span>
             </div>
-            <button type="button" onClick={() => recordInputRef.current?.click()} disabled={!activeCassette || activeCassette.locked} className="tp7-label-key flex items-center gap-1">
-              <Upload className="h-3 w-3" />
-              REC · SIDE {activeSide}
-            </button>
-            <input ref={recordInputRef} type="file" accept="audio/*" onChange={handleAudioUpload} className="sr-only" />
+
+            <div className="tp7-drive-zone">
+              <aside className="tp7-track-list" aria-label="Track list">
+                <div className="tp7-track-list-header">
+                  <span>TRACK LIST</span>
+                  <span>{String(availableTracks.length).padStart(2, '0')}</span>
+                </div>
+                <div className="tp7-track-list-items">
+                  {availableTracks.length > 0 ? availableTracks.map((track, index) => {
+                    const isSelectedTrack = track.cassetteId === activeCassetteId && track.side === activeSide;
+                    return (
+                      <button
+                        key={`${track.cassetteId}:${track.side}`}
+                        type="button"
+                        aria-pressed={isSelectedTrack}
+                        onPointerDown={handleHardwareButtonPointerDown}
+                        onKeyDown={handleHardwareButtonKeyDown}
+                        onClick={() => selectTrackFromList(track)}
+                        className={`tp7-track-item ${isSelectedTrack ? 'is-selected' : ''}`}
+                      >
+                        <span className="tp7-track-number">{String(index + 1).padStart(2, '0')}</span>
+                        <span className="tp7-track-copy">
+                          <span className="tp7-track-item-title">{track.title}</span>
+                          <span className="tp7-track-item-detail">{track.detail}</span>
+                        </span>
+                        <span className="tp7-track-item-led" />
+                      </button>
+                    );
+                  }) : (
+                    <p className="tp7-track-list-empty">NO TRACKS</p>
+                  )}
+                </div>
+              </aside>
+              <div
+                role="slider"
+                aria-label="Turntable jog wheel"
+                  aria-valuemin={0}
+                  aria-valuemax={Math.floor(playbackDuration)}
+                  aria-valuenow={Math.floor(playbackTime)}
+                  aria-valuetext={`${formattedPlaybackTime(playbackTime)} of ${formattedPlaybackTime(playbackDuration)}. Rotate while dragging to jog.`}
+                  aria-disabled={!canSeekTurntable}
+                  tabIndex={canSeekTurntable ? 0 : -1}
+                  title="Rotate around the platter to scratch or seek"
+                  onKeyDown={handleTurntableKeyDown}
+                  onPointerDown={startTurntableDrag}
+                  onPointerMove={moveTurntable}
+                  onPointerUp={(event) => endTurntableDrag(event, true)}
+                  onPointerCancel={(event) => endTurntableDrag(event, false)}
+                  onLostPointerCapture={(event) => endTurntableDrag(event, false)}
+                  onAnimationEnd={(event) => {
+                    if (event.animationName === 'cassette-flip') setIsFlipping(false);
+                  }}
+                  style={{
+                    background: `conic-gradient(from 0deg, #ff4a1c ${turntableProgress * 100}%, #3b3d42 ${turntableProgress * 100}% 100%)`,
+                  }}
+                  className={`tp7-reel-face tp7-drive-platter relative flex aspect-square w-[184px] touch-none select-none items-center justify-center rounded-full p-[7px] outline-none sm:w-[204px] ${
+                    canSeekTurntable ? 'cursor-grab focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff4a1c] active:cursor-grabbing' : 'cursor-default'
+                  } ${
+                    activeCassette ? 'cassette-deck-snap' : ''
+                  } ${isFlipping ? 'cassette-flip' : ''}`}
+                >
+                  <div
+                    ref={reelFaceRef}
+                    className="tp7-reel-face-inner pointer-events-none absolute inset-[7px] flex items-center justify-center overflow-hidden rounded-full border"
+                  >
+                    <span className="tp7-platter-groove absolute inset-[7px] rounded-full border" />
+                    <span className="tp7-platter-groove absolute inset-[15px] rounded-full border" />
+                    <span className="tp7-platter-groove absolute inset-[25px] rounded-full border" />
+                    <span className="tp7-platter-index-mark tp7-platter-index-mark-left" />
+                    <span className="tp7-platter-index-mark tp7-platter-index-mark-right" />
+                    <span className="tp7-platter-index-mark tp7-platter-index-mark-top" />
+                    <div className="tp7-reel-hub relative flex h-16 w-16 items-center justify-center rounded-full border sm:h-[72px] sm:w-[72px]">
+                      <span className="tp7-reel-hub-ring absolute rounded-full" />
+                    </div>
+                  </div>
+                </div>
+                <label className="cdj-volume-control tp7-drive-volume">
+                  <span className="font-mono text-[7px] uppercase tracking-[0.16em] text-neutral-500">Master</span>
+                  <input
+                    type="range"
+                    aria-label="Master volume"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={volume}
+                    onChange={(event) => setVolume(Number(event.currentTarget.value))}
+                    className="cdj-volume-fader"
+                  />
+                  <output className="font-mono text-[7px] tabular-nums text-neutral-500">
+                    {Math.round(volume * 100)}%
+                  </output>
+                </label>
+              </div>
+
+            <p className="tp7-reel-caption">DRAG REEL: SCRUB / HOLD: BRAKE</p>
           </div>
 
-          {currentSide?.kind === 'audio' && (
-            <audio
-              ref={audioRef}
-              src={audioUrl ?? undefined}
-              onLoadedMetadata={(event) => {
-                const { duration } = event.currentTarget;
-                setPlaybackDuration(Number.isFinite(duration) ? duration : 0);
-                setPlaybackTime(event.currentTarget.currentTime);
-              }}
-              onDurationChange={(event) => {
-                const { duration } = event.currentTarget;
-                setPlaybackDuration(Number.isFinite(duration) ? duration : 0);
-              }}
-              onTimeUpdate={(event) => {
-                setPlaybackTime(event.currentTarget.currentTime);
-                saveProgress();
-              }}
-              onSeeked={() => saveProgress(true)}
-              onPause={() => saveProgress(true)}
-              onEnded={() => setIsPlaying(false)}
-              className="hidden"
-            />
-          )}
+          <div className="tp7-switch-bank-header">
+            <span>TRANSPORT // MECHANICAL SWITCH BANK</span>
+            <span>TRAVEL: 1.5PX</span>
+          </div>
+
+          <div className="cdj-transport-controls" role="group" aria-label="Transport controls">
+            <button type="button" aria-label="Rewind" title="Hold to rewind" disabled={!currentSide} onPointerDown={(event) => { handleHardwareButtonPointerDown(event); beginRewind(); }} onPointerUp={endRewind} onPointerCancel={endRewind} onPointerLeave={endRewind} onKeyDown={handleHardwareButtonKeyDown} className="cdj-control-button">
+              <span className="cdj-control-label">REW</span>
+              <Rewind className="cdj-control-icon" />
+            </button>
+            <button type="button" aria-label="Previous cassette" onPointerDown={handleHardwareButtonPointerDown} onKeyDown={handleHardwareButtonKeyDown} onClick={() => changeCassette(-1)} disabled={!activeCassette} className="cdj-control-button cdj-control-light">
+              <span className="cdj-control-label">PREV</span>
+              <SkipBack className="cdj-control-icon" />
+            </button>
+            <button type="button" aria-label={isPlaying ? 'Pause' : 'Play'} onPointerDown={handleHardwareButtonPointerDown} onKeyDown={handleHardwareButtonKeyDown} onClick={togglePlay} disabled={!currentSide || (currentSide.kind === 'audio' && !isAudioReady)} className={`cdj-control-button cdj-control-play ${isPlaying ? 'cdj-control-lit' : ''}`}>
+              <span className="cdj-control-label">{isPlaying ? 'PAUSE' : 'PLAY'}</span>
+              {isPlaying ? <Pause className="cdj-control-icon" /> : <Play className="cdj-control-icon" />}
+            </button>
+            <button type="button" aria-label="Next cassette" onPointerDown={handleHardwareButtonPointerDown} onKeyDown={handleHardwareButtonKeyDown} onClick={() => changeCassette(1)} disabled={!activeCassette} className="cdj-control-button cdj-control-light">
+              <span className="cdj-control-label">NEXT</span>
+              <SkipForward className="cdj-control-icon" />
+            </button>
+            <button type="button" aria-label="Fast forward" title="Hold to fast-forward" disabled={!currentSide || currentSide.kind === 'soundcloud'} onPointerDown={(event) => { handleHardwareButtonPointerDown(event); setIsFastForwarding(true); }} onPointerUp={() => setIsFastForwarding(false)} onPointerCancel={() => setIsFastForwarding(false)} onPointerLeave={() => setIsFastForwarding(false)} onKeyDown={handleHardwareButtonKeyDown} className={`cdj-control-button ${isFastForwarding ? 'cdj-control-active' : ''}`}>
+              <span className="cdj-control-label">FWD</span>
+              <FastForward className="cdj-control-icon" />
+            </button>
+            <button type="button" aria-label={isPlaying ? 'Stop' : 'Eject'} title={isPlaying ? 'Stop' : 'Eject cassette'} onPointerDown={handleHardwareButtonPointerDown} onKeyDown={handleHardwareButtonKeyDown} onClick={stopOrEject} disabled={!activeCassette} className="cdj-control-button cdj-control-light">
+              <span className="cdj-control-label">{isPlaying ? 'STOP' : 'EJECT'}</span>
+              <Square className="cdj-control-icon" />
+            </button>
+          </div>
+
+          <div className="tp7-footer-cavity" role="group" aria-label="Cassette controls">
+            <button
+              type="button"
+              aria-label={`Flip to side ${activeSide === 'A' ? 'B' : 'A'}`}
+              onPointerDown={handleHardwareButtonPointerDown}
+              onKeyDown={handleHardwareButtonKeyDown}
+              onClick={flipSide}
+              disabled={!activeCassette}
+              className="tp7-footer-key"
+            >
+              <span className="tp7-footer-label">FLIP</span>
+              <span className="tp7-footer-led" />
+              <FlipHorizontal className="tp7-footer-glyph" />
+            </button>
+            <button
+              type="button"
+              aria-label={activeCassette?.locked ? 'Unlock cassette' : 'Lock cassette'}
+              onPointerDown={handleHardwareButtonPointerDown}
+              onKeyDown={handleHardwareButtonKeyDown}
+              onClick={() => activeCassette && persistCassette({ ...activeCassette, locked: !activeCassette.locked })}
+              disabled={!activeCassette}
+              className={`tp7-footer-key ${activeCassette?.locked ? 'is-locked' : ''}`}
+            >
+              <span className="tp7-footer-label">{activeCassette?.locked ? 'LOCKED' : 'LOCK'}</span>
+              <span className="tp7-footer-led" />
+              {activeCassette?.locked
+                ? <LockKeyhole className="tp7-footer-glyph" />
+                : <UnlockKeyhole className="tp7-footer-glyph" />}
+            </button>
+          </div>
+
         </section>
       </div>
 
@@ -959,7 +1628,7 @@ export default function MusicPage() {
             </div>
             <p className="mt-7 text-xs font-medium uppercase tracking-[0.22em] text-white">{selectedCassette.title}</p>
             <p className="mt-2 text-[9px] uppercase tracking-[0.2em] text-neutral-500">
-              {isInserting ? 'Loading tape...' : 'Swipe down to play'}
+              {isInserting ? 'Loading tape...' : 'Swipe down to insert'}
             </p>
             {!isInserting && (
               <button
