@@ -28,7 +28,7 @@ import { createWaveformPeaks, WebAudioPlayer } from '../lib/privateAudioPlayer';
 import { createFrequencyWaveform, waveformBarsPerSecond } from '../lib/frequencyWaveform';
 import type { FrequencyWaveformBar } from '../lib/frequencyWaveform';
 import type { Cassette, CassetteSide } from '../lib/musicStorage';
-import { nextQueueEntry, swapQueueEntries } from '../lib/musicQueue';
+import { nextQueueEntry } from '../lib/musicQueue';
 import type { QueueEntry } from '../lib/musicQueue';
 import { initialCassettes } from '../lib/musicCatalog';
 import './MusicPage.css';
@@ -224,6 +224,7 @@ export default function MusicPage() {
     ? ('src' in currentSide ? currentSide.src : currentSide.blob)
     : null;
   const activeSideId = activeCassette ? sideKey(activeCassette.id, activeSide) : null;
+  
   useEffect(() => {
     setPlaybackTime(0);
     setPlaybackDuration(0);
@@ -796,15 +797,32 @@ export default function MusicPage() {
     const drag = queuePointerDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     queuePointerDragRef.current = null;
+
+    // Release capture before hit-testing to ensure correct targeting across browsers
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
     if (!drag.hasMoved) return;
     event.preventDefault();
+    
     const target = document.elementFromPoint(event.clientX, event.clientY);
     const targetId = target?.closest<HTMLElement>('[data-queue-slot]')?.dataset.queueSlot;
     const entry = playlist.find((item) => item.id === drag.entryId);
+    
     if (entry && target?.closest('[data-queue-eject]')) {
       removeQueueEntry(entry);
-    } else if (targetId) {
-      setPlaylist((current) => swapQueueEntries(current, drag.entryId, targetId));
+    } else if (targetId && targetId !== drag.entryId) {
+      setPlaylist((current) => {
+        const sourceIndex = current.findIndex(e => e.id === drag.entryId);
+        const targetIndex = current.findIndex(e => e.id === targetId);
+        if (sourceIndex < 0 || targetIndex < 0) return current;
+        
+        const result = [...current];
+        const [removed] = result.splice(sourceIndex, 1);
+        result.splice(targetIndex, 0, removed);
+        return result;
+      });
     }
     resetPointerDrag();
   };
@@ -851,6 +869,11 @@ export default function MusicPage() {
     const drag = shelfPointerDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     shelfPointerDragRef.current = null;
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
     if (!drag.hasMoved) return;
 
     event.preventDefault();
@@ -859,10 +882,9 @@ export default function MusicPage() {
       suppressNextCassetteClickRef.current = false;
     }, 0);
 
-    const targetCassetteId = document
-      .elementFromPoint(event.clientX, event.clientY)
-      ?.closest<HTMLButtonElement>('[data-cassette-id]')
-      ?.dataset.cassetteId;
+    const dropElement = document.elementFromPoint(event.clientX, event.clientY);
+    const targetCassetteId = dropElement?.closest<HTMLButtonElement>('[data-cassette-id]')?.dataset.cassetteId;
+    
     const targetCassette = cassettes.find((cassette) => cassette.id === targetCassetteId);
     const sourceCassette = cassettes.find((cassette) => cassette.id === drag.cassetteId);
 
@@ -873,10 +895,10 @@ export default function MusicPage() {
       return;
     }
 
-    const dropElement = document.elementFromPoint(event.clientX, event.clientY);
     const queueId = dropElement?.closest<HTMLElement>('[data-queue-slot]')?.dataset.queueSlot;
     const queueEntry = playlist.find((entry) => entry.id === queueId);
     const slot = dropElement?.closest('[data-cassette-slot]');
+    
     if (sourceCassette && queueEntry) {
       replaceQueueEntry(queueEntry, sourceCassette);
     } else if (sourceCassette && slot) {
@@ -985,14 +1007,14 @@ export default function MusicPage() {
     setIsPlaying(shouldPlay);
   };
 
-  useEffect(() => {
-    if (!isPlaying || !window.matchMedia('(max-width: 768px)').matches) return;
-    setIsPlayerExpanded(false);
-    displayRef.current?.scrollIntoView({
-      block: 'center',
-      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
-    });
-  }, [isPlaying]);
+  // useEffect(() => {
+  //   if (!isPlaying || !window.matchMedia('(max-width: 768px)').matches) return;
+  //   setIsPlayerExpanded(false);
+  //   displayRef.current?.scrollIntoView({
+  //     block: 'center',
+  //     behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+  //   });
+  // }, [isPlaying]);
 
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
@@ -1030,15 +1052,24 @@ export default function MusicPage() {
     };
   }, [activeCassette, currentSide, currentSideTitle, isAudioReady, isPlaying, soundCloudReady]);
 
-  const changeCassette = (direction: -1 | 1) => {
-    if (!activeCassette) return;
+const changeCassette = (direction: -1 | 1) => {
+    // キューが空、または現在再生中のキューIDが存在しない場合は何もしない
+    if (playlist.length === 0 || !activeQueueId) return;
+
     if (currentSide?.kind === 'audio') saveProgress(true);
-    setActiveQueueId(null);
-    setAutoStartEntry(null);
-    const index = cassettes.findIndex((cassette) => cassette.id === activeCassette.id);
-    const next = cassettes[(index + direction + cassettes.length) % cassettes.length];
-    setActiveCassetteId(next.id);
+    
+    // 現在再生している曲の、キュー（playlist）内でのインデックスを取得
+    const index = playlist.findIndex((entry) => entry.id === activeQueueId);
+    if (index === -1) return;
+
+    // 前/次のキューエントリーを取得（リストの端に到達したらループさせる）
+    const nextEntry = playlist[(index + direction + playlist.length) % playlist.length];
+
+    // 新しいキューの状態をセット
+    setActiveQueueId(nextEntry.id);
+    setActiveCassetteId(nextEntry.cassetteId);
     setActiveSide('A');
+    setAutoStartEntry(null);
     setIsPlaying(false);
   };
 
@@ -1780,8 +1811,26 @@ export default function MusicPage() {
                           <span className="tp7-tape-reels" aria-hidden="true">▣ ▣</span>
                         </button>
                         <div className="tp7-tape-actions">
-                          <button type="button" disabled={index === 0} aria-label={`Move slot ${index + 1} up`} onClick={() => setPlaylist((current) => swapQueueEntries(current, entry.id, playlist[index - 1].id))}>▲</button>
-                          <button type="button" disabled={index === playlist.length - 1} aria-label={`Move slot ${index + 1} down`} onClick={() => setPlaylist((current) => swapQueueEntries(current, entry.id, playlist[index + 1].id))}>▼</button>
+                          <button
+                            type="button"
+                            disabled={index === 0}
+                            aria-label={`Move slot ${index + 1} up`}
+                            onClick={() => setPlaylist((current) => {
+                              const result = [...current];
+                              [result[index - 1], result[index]] = [result[index], result[index - 1]];
+                              return result;
+                            })}
+                          >▲</button>
+                          <button
+                            type="button"
+                            disabled={index === playlist.length - 1}
+                            aria-label={`Move slot ${index + 1} down`}
+                            onClick={() => setPlaylist((current) => {
+                              const result = [...current];
+                              [result[index + 1], result[index]] = [result[index], result[index + 1]];
+                              return result;
+                            })}
+                          >▼</button>
                           <button type="button" aria-label={`Eject slot ${index + 1}: ${cassette?.sideATitle ?? 'cassette'}`} onClick={() => removeQueueEntry(entry)}>×</button>
                         </div>
                       </div>
