@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import {
   Play,
   ExternalLink,
@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { OpeningIntro } from '../components/OpeningIntro';
 import { SiteMenu } from '../components/SiteMenu';
+import './ArtistPage.css';
 
 interface Track {
   id: string;
@@ -47,7 +48,6 @@ interface SocialLink {
   url: string;
   desc: string;
   icon: typeof Youtube;
-  hoverColor: string;
 }
 
 const SOCIAL_LINKS: SocialLink[] = [
@@ -58,7 +58,6 @@ const SOCIAL_LINKS: SocialLink[] = [
     url: 'https://www.youtube.com/@shota_christopher_ohyama',
     desc: 'Official Channel & Music Videos',
     icon: Youtube,
-    hoverColor: 'group-hover:text-red-500',
   },
   {
     id: 'soundcloud',
@@ -67,7 +66,6 @@ const SOCIAL_LINKS: SocialLink[] = [
     url: 'https://soundcloud.com/chrisakagangcat',
     desc: 'Original Tracks & Audio Streaming',
     icon: Cloud,
-    hoverColor: 'group-hover:text-orange-400',
   },
   {
     id: 'tiktok',
@@ -76,7 +74,6 @@ const SOCIAL_LINKS: SocialLink[] = [
     url: 'https://www.tiktok.com/@gang_cat_chris',
     desc: 'Shorts & Behind The Scenes',
     icon: Video,
-    hoverColor: 'group-hover:text-cyan-400',
   },
   {
     id: 'instagram',
@@ -85,7 +82,6 @@ const SOCIAL_LINKS: SocialLink[] = [
     url: 'https://www.instagram.com/chris_neko_/',
     desc: 'Photos & Daily Stories',
     icon: Instagram,
-    hoverColor: 'group-hover:text-pink-400',
   },
   {
     id: 'x',
@@ -94,7 +90,6 @@ const SOCIAL_LINKS: SocialLink[] = [
     url: 'https://x.com/Chris193389686',
     desc: 'Official Announcements & Thoughts',
     icon: Twitter,
-    hoverColor: 'group-hover:text-sky-400',
   },
 ];
 
@@ -107,25 +102,23 @@ export default function ArtistPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-black text-neutral-100 flex flex-col selection:bg-neutral-800 selection:text-white font-sans relative">
-      <AnimatePresence>
-        {showIntro && (
-          <OpeningIntro
-            key="opening-intro-screen"
-            onComplete={() => setShowIntro(false)}
-          />
-        )}
-      </AnimatePresence>
+    <div className="artist-home min-h-screen bg-black text-neutral-100 flex flex-col selection:bg-neutral-800 selection:text-white relative">
+      {showIntro && (
+        <OpeningIntro
+          key="opening-intro-screen"
+          onComplete={() => setShowIntro(false)}
+        />
+      )}
 
       <motion.header
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.7, delay: 0.1 }}
-        className="relative z-50 border-b border-neutral-900/80 backdrop-blur-md bg-black/80 sticky top-0"
+        className="artist-header relative z-50 border-b border-neutral-900/80 backdrop-blur-md bg-black/80 sticky top-0"
       >
         <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 shrink-0">
-            <span className="text-xl font-bold tracking-[0.3em] uppercase text-white font-mono">
+            <span className="artist-wordmark text-xl font-bold tracking-[0.3em] uppercase text-white">
               CHRIS
             </span>
             <span className="hidden sm:inline-block text-[11px] uppercase tracking-widest text-neutral-500 border-l border-neutral-800 pl-3">
@@ -138,11 +131,11 @@ export default function ArtistPage() {
               id="replay-intro-btn"
               type="button"
               onClick={() => setShowIntro(true)}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-neutral-800 bg-white/5 hover:bg-white/10 hover:border-neutral-700 text-neutral-300 hover:text-white transition-all duration-200 text-xs shrink-0 cursor-pointer"
+              className="artist-intro-button inline-flex items-center gap-1.5 px-2.5 py-1 border border-neutral-800 bg-white/5 hover:bg-white/10 hover:border-neutral-700 text-neutral-300 hover:text-white transition-all duration-200 text-xs shrink-0 cursor-pointer"
               title="オープニング演出を再生"
             >
-              <Sparkles className="w-3 h-3 text-red-400" />
-              <span className="text-[11px] font-mono">Intro</span>
+              <Sparkles className="w-3 h-3" />
+              <span className="text-[11px]">Intro</span>
             </button>
             <SiteMenu />
           </div>
@@ -157,7 +150,7 @@ export default function ArtistPage() {
           transition={{ duration: 0.8, delay: 0.2 }}
           className="flex flex-col gap-4"
         >
-          <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-black shadow-2xl border border-neutral-800/80 group">
+          <div className="artist-video-frame relative w-full aspect-video overflow-hidden bg-black border group">
             <iframe
               id="main-youtube-iframe"
               key={activeTrack.youtubeId}
@@ -172,11 +165,11 @@ export default function ArtistPage() {
           <div className="flex flex-wrap items-center justify-between gap-4 pt-1">
             <div>
               <div className="flex items-center gap-2.5">
-                <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white">
+                <h1 className="artist-track-title text-2xl sm:text-3xl font-semibold tracking-tight text-white">
                   {activeTrack.title}
                 </h1>
                 {activeTrack.isNew && (
-                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/10 text-neutral-200 border border-white/15">
+                  <span className="artist-release-tag text-[10px] font-bold uppercase tracking-wider px-2 py-0.5">
                     New Release
                   </span>
                 )}
@@ -193,7 +186,7 @@ export default function ArtistPage() {
                 href={`https://youtu.be/${activeTrack.youtubeId}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-neutral-300 hover:text-white bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 rounded-lg transition duration-200"
+                className="artist-watch-link inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-neutral-300 hover:text-white border transition duration-200"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
                 <span>YouTubeで視聴</span>
@@ -207,10 +200,10 @@ export default function ArtistPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.35 }}
-          className="border-t border-neutral-900 pt-8"
+          className="artist-section border-t border-neutral-900 pt-8"
         >
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xs uppercase font-semibold tracking-[0.2em] text-neutral-400 flex items-center gap-2">
+            <h2 className="artist-section-title text-xs uppercase font-semibold tracking-[0.2em] text-neutral-400 flex items-center gap-2">
               <Disc3 className="w-4 h-4 text-neutral-500" />
               Music Videos
             </h2>
@@ -225,14 +218,15 @@ export default function ArtistPage() {
                   key={track.id}
                   id={`track-card-${track.id}`}
                   type="button"
+                  aria-pressed={isSelected}
                   onClick={() => setActiveTrack(track)}
-                  className={`text-left p-3.5 rounded-xl border transition-all duration-200 flex items-center gap-4 cursor-pointer ${
+                  className={`artist-track-card text-left p-3.5 border transition-all duration-200 flex items-center gap-4 cursor-pointer ${
                     isSelected
-                      ? 'bg-neutral-900/90 border-neutral-700 ring-1 ring-neutral-600/50'
+                      ? 'is-active'
                       : 'bg-neutral-950/40 border-neutral-900 hover:bg-neutral-900/50 hover:border-neutral-800'
                   }`}
                 >
-                  <div className="relative w-28 aspect-video rounded-lg overflow-hidden bg-black shrink-0 border border-neutral-800">
+                  <div className="artist-thumbnail relative w-28 aspect-video overflow-hidden bg-black shrink-0 border border-neutral-800">
                     <img
                       src={`https://i.ytimg.com/vi/${track.youtubeId}/hqdefault.jpg`}
                       alt={track.title}
@@ -260,14 +254,14 @@ export default function ArtistPage() {
                         {track.title}
                       </p>
                       {track.isNew && (
-                        <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/10 text-neutral-300 border border-white/10">
+                        <span className="artist-release-tag text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5">
                           New
                         </span>
                       )}
                     </div>
                     <p className="text-xs text-neutral-500 truncate mt-0.5">{track.subtitle}</p>
                     {isSelected && (
-                      <span className="inline-block text-[10px] text-neutral-400 mt-1 font-mono">
+                      <span className="artist-now-playing inline-block text-[10px] mt-1">
                         ● Now Playing
                       </span>
                     )}
@@ -283,10 +277,10 @@ export default function ArtistPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.5 }}
-          className="border-t border-neutral-900 pt-8"
+          className="artist-section border-t border-neutral-900 pt-8"
         >
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xs uppercase font-semibold tracking-[0.2em] text-neutral-400 flex items-center gap-2">
+            <h2 className="artist-section-title text-xs uppercase font-semibold tracking-[0.2em] text-neutral-400 flex items-center gap-2">
               <Share2 className="w-4 h-4 text-neutral-500" />
               Official Links & Streaming
             </h2>
@@ -303,18 +297,18 @@ export default function ArtistPage() {
                   href={link.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="group relative p-4 rounded-xl border border-neutral-900 bg-neutral-950/40 hover:bg-neutral-900/60 hover:border-neutral-800 transition-all duration-200 flex flex-col justify-between"
+                  className="artist-social-card group relative p-4 border border-neutral-900 bg-neutral-950/40 hover:bg-neutral-900/60 hover:border-neutral-800 transition-all duration-200 flex flex-col justify-between"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-300 group-hover:border-neutral-700 transition-colors">
-                        <Icon className={`w-4 h-4 transition-colors ${link.hoverColor}`} />
+                      <div className="artist-social-icon w-9 h-9 bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-300 group-hover:border-neutral-700 transition-colors">
+                        <Icon className="w-4 h-4 transition-colors" />
                       </div>
                       <div>
                         <h3 className="text-sm font-semibold text-white group-hover:text-neutral-100 transition-colors">
                           {link.name}
                         </h3>
-                        <p className="text-[11px] font-mono text-neutral-500">{link.handle}</p>
+                        <p className="text-[11px] text-neutral-500">{link.handle}</p>
                       </div>
                     </div>
 
@@ -329,7 +323,7 @@ export default function ArtistPage() {
         </motion.section>
       </main>
 
-      <footer className="relative z-10 border-t border-neutral-900/80 py-8 text-neutral-500 text-xs">
+      <footer className="artist-footer relative z-10 border-t border-neutral-900/80 py-8 text-neutral-500 text-xs">
         <div className="max-w-5xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <p>© {new Date().getFullYear()} CHRIS (Shota Christopher Ohyama). All rights reserved.</p>
           <div className="flex items-center gap-4">

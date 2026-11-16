@@ -1,0 +1,217 @@
+.artist-home {
+  background: #050505;
+  font-family: "DotGothic16", monospace;
+}
+
+.artist-header {
+  background: #050505;
+  border-bottom: 2px solid #383838;
+}
+
+.artist-header::after {
+  position: absolute;
+  right: 0;
+  bottom: -2px;
+  width: 8%;
+  height: 2px;
+  content: "";
+  background: repeating-linear-gradient(to right, #fff 0 6px, #050505 6px 10px);
+  pointer-events: none;
+}
+
+.artist-wordmark {
+  font-family: "Press Start 2P", "DotGothic16", monospace;
+  font-size: 0.9rem;
+  letter-spacing: 0.06em;
+  text-shadow: 2px 2px 0 #555;
+}
+
+.artist-intro-button,
+.artist-home .site-menu > button[aria-expanded],
+.artist-watch-link {
+  border: 1px solid #777;
+  border-radius: 0;
+  background: #050505;
+}
+
+.artist-intro-button svg {
+  color: #00ff66;
+}
+
+.artist-home .site-menu-panel {
+  border: 2px solid #fff;
+  border-radius: 0;
+  background: #050505;
+  box-shadow: 5px 5px 0 #555;
+}
+
+.artist-home .site-menu-panel a {
+  border-radius: 0;
+}
+
+.artist-home .site-menu-panel a:hover,
+.artist-home .site-menu-panel a:focus-visible {
+  background: #fff;
+  color: #050505;
+}
+
+.artist-home .site-menu-panel a:hover span:last-child,
+.artist-home .site-menu-panel a:focus-visible span:last-child {
+  color: #333;
+}
+
+.artist-video-frame {
+  border: 2px solid #777;
+  box-shadow: 5px 5px 0 #222;
+}
+
+.artist-video-frame::before,
+.artist-video-frame::after {
+  position: absolute;
+  z-index: 1;
+  width: 28px;
+  height: 28px;
+  content: "";
+  background: #fff;
+  pointer-events: none;
+}
+
+.artist-video-frame::before {
+  top: 0;
+  left: 0;
+  clip-path: polygon(0 0, 100% 0, 100% 4px, 8px 4px, 8px 8px, 4px 8px, 4px 100%, 0 100%);
+}
+
+.artist-video-frame::after {
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  background: #00ff66;
+  clip-path: polygon(100% 100%, 0 100%, 0 calc(100% - 4px), calc(100% - 8px) calc(100% - 4px), calc(100% - 8px) calc(100% - 8px), calc(100% - 4px) calc(100% - 8px), calc(100% - 4px) 0, 100% 0);
+}
+
+.artist-track-title {
+  font-family: "Silkscreen", "DotGothic16", monospace;
+  letter-spacing: -0.02em;
+}
+
+.artist-release-tag {
+  background: #fff;
+  color: #050505;
+  font-family: "Silkscreen", "DotGothic16", monospace;
+  white-space: nowrap;
+}
+
+.artist-watch-link:hover,
+.artist-watch-link:focus-visible,
+.artist-intro-button:hover,
+.artist-intro-button:focus-visible,
+.artist-home .site-menu > button[aria-expanded]:hover,
+.artist-home .site-menu > button[aria-expanded]:focus-visible {
+  border-color: #fff;
+  color: #fff;
+}
+
+.artist-section {
+  position: relative;
+  border-color: #444;
+}
+
+.artist-section::before {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  width: 60px;
+  height: 5px;
+  content: "";
+  background: repeating-linear-gradient(to right, #fff 0 8px, #050505 8px 12px);
+}
+
+.artist-section-title {
+  color: #fff;
+  font-family: "Silkscreen", "DotGothic16", monospace;
+  letter-spacing: 0.08em;
+}
+
+.artist-section-title svg {
+  color: #fff;
+}
+
+.artist-track-card,
+.artist-social-card {
+  position: relative;
+  border: 1px solid #555;
+  border-radius: 0;
+  background: #0a0a0a;
+}
+
+.artist-track-card::after,
+.artist-social-card::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 12px;
+  height: 12px;
+  content: "";
+  background: #fff;
+  clip-path: polygon(100% 0, 100% 100%, 0 100%, 0 75%, 50% 75%, 50% 50%, 75% 50%, 75% 0);
+  pointer-events: none;
+}
+
+.artist-track-card:hover,
+.artist-track-card:focus-visible,
+.artist-social-card:hover,
+.artist-social-card:focus-visible {
+  border-color: #fff;
+  background: #202020;
+}
+
+.artist-track-card:focus-visible,
+.artist-social-card:focus-visible,
+.artist-watch-link:focus-visible,
+.artist-intro-button:focus-visible,
+.artist-home .site-menu button:focus-visible,
+.artist-home .site-menu-panel a:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.artist-track-card.is-active {
+  border-color: #fff;
+  background: #171717;
+  box-shadow: 2px 2px 0 #777;
+}
+
+.artist-thumbnail,
+.artist-social-icon {
+  border-radius: 0;
+}
+
+.artist-now-playing {
+  color: #00ff66;
+}
+
+.artist-social-card:hover .artist-social-icon,
+.artist-social-card:focus-visible .artist-social-icon {
+  color: #fff;
+}
+
+.artist-social-card h3 {
+  font-family: "Silkscreen", "DotGothic16", monospace;
+}
+
+.artist-footer {
+  border-color: #444;
+}
+
+.artist-footer a:hover,
+.artist-footer a:focus-visible {
+  color: #fff;
+}
+
+@media (max-width: 380px) {
+  .artist-track-title {
+    font-size: 1.2rem;
+  }
+}

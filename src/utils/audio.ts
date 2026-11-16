@@ -8,7 +8,7 @@ class StartupAudioEngine {
     // プリロード (.oggファイルを指定)
     if (typeof window !== 'undefined') {
       try {
-        this.audio = new Audio('/audio/startup.ogg');
+        this.audio = new Audio('/startup.ogg');
         this.audio.preload = 'auto';
         this.audio.volume = 0.95;
       } catch {
@@ -36,21 +36,13 @@ class StartupAudioEngine {
 
     try {
       if (!this.audio) {
-        this.audio = new Audio('/audio/startup.ogg');
+        this.audio = new Audio('/startup.ogg');
       }
       this.audio.currentTime = 0;
       this.audio.volume = 0.95;
       await this.audio.play();
-    } catch {
-      // ルートパス /startup.ogg で再試行
-      try {
-        const fallbackOgg = new Audio('/startup.ogg');
-        fallbackOgg.volume = 0.95;
-        await fallbackOgg.play();
-        this.audio = fallbackOgg;
-      } catch (fallbackErr) {
-        console.warn('Startup audio playback error:', fallbackErr);
-      }
+    } catch (error) {
+      console.warn('Startup audio playback error:', error);
     }
   }
 }
