@@ -188,7 +188,7 @@ export class SupabaseWorkletAudioPlayer {
       this.buffer = buffer;
       node.port.onmessage = ({ data }: MessageEvent<WorkletMessage>) => {
         if (this.node !== node || !this.buffer) return;
-        if (data.type === 'position' && typeof data.frame === 'number') {
+        if (this.playing && data.type === 'position' && typeof data.frame === 'number') {
           this.position = Math.min(this.buffer.duration, data.frame / this.buffer.sampleRate);
           this.positionUpdatedAt = context.currentTime;
         } else if (data.type === 'ended') {
@@ -258,6 +258,37 @@ export class SupabaseWorkletAudioPlayer {
     this.disconnectNode();
   }
 
+  async beginScratch() {
+    if (!this.buffer || !this.node) throw new Error('Audio has not finished loading.');
+    const context = this.getContext();
+    this.connectNode();
+    if (context.state === 'suspended') await context.resume();
+  }
+
+  scratch(fromSeconds: number, toSeconds: number, duration: number) {
+    if (!this.buffer || !this.node) throw new Error('Audio has not finished loading.');
+    if (!Number.isFinite(fromSeconds) || !Number.isFinite(toSeconds) || !Number.isFinite(duration) || duration <= 0) {
+      throw new Error('Invalid scratch position or duration.');
+    }
+    this.position = Math.max(0, Math.min(toSeconds, this.buffer.duration));
+    this.positionUpdatedAt = this.context?.currentTime ?? 0;
+    if (this.position === fromSeconds) {
+      this.node.port.postMessage({ type: 'stopScratch' });
+      return;
+    }
+    this.node.port.postMessage({
+      type: 'scratch',
+      from: fromSeconds * this.buffer.sampleRate,
+      to: this.position * this.buffer.sampleRate,
+      duration,
+    });
+  }
+
+  endScratch() {
+    this.node?.port.postMessage({ type: 'stopScratch' });
+    this.disconnectNode();
+  }
+
   stop() {
     this.loadGeneration += 1;
     this.loadController?.abort();
@@ -302,6 +333,11 @@ export class SupabaseWorkletAudioPlayer {
   private getContext() {
     if (!this.context || this.context.state === 'closed') this.context = new AudioContext();
     if (!this.workletModule) {
+      if (!this.context.audioWorklet) {
+        throw new Error(window.isSecureContext
+          ? 'AudioWorklet is not supported by this browser. Try a current browser.'
+          : 'Audio requires HTTPS on network devices. Start the HTTPS development server and trust its certificate.');
+      }
       this.workletModule = this.context.audioWorklet.addModule(workletUrl);
     }
     return this.context;

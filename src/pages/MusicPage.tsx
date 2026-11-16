@@ -24,7 +24,9 @@ import {
   savePlaybackProgress,
 } from '../lib/musicStorage';
 import { SupabaseWorkletAudioPlayer } from '../lib/encryptedAudioPlayer';
-import { createWaveformPeaks, playTactileSwitchSound, WebAudioPlayer } from '../lib/privateAudioPlayer';
+import { createWaveformPeaks, WebAudioPlayer } from '../lib/privateAudioPlayer';
+import { createFrequencyWaveform, waveformBarsPerSecond } from '../lib/frequencyWaveform';
+import type { FrequencyWaveformBar } from '../lib/frequencyWaveform';
 import type { Cassette, CassetteSide } from '../lib/musicStorage';
 
 interface SoundCloudWidgetEvent {
@@ -126,6 +128,16 @@ const initialCassettes: Cassette[] = [
     color: 'from-[#c7a77b] via-[#57412b] to-[#090a10]',
     locked: true,
   },
+  {
+    id: 'voyage',
+    title: 'VOYAGE',
+    sideATitle: 'VOYAGE',
+    sideBTitle: 'SIDE B',
+    sideA: { kind: 'audio', src: 'voyage.bin', fileName: 'VOYAGE.mp3' },
+    sideB: null,
+    color: 'from-[#8f9eae] via-[#303c4b] to-[#090a10]',
+    locked: true,
+  },
 ];
 
 const tapeColors = [
@@ -148,6 +160,7 @@ interface TurntableDrag {
   pointerId: number;
   lastAngle: number;
   lastTrackTime: number;
+  lastMoveTime: number;
   wasPlaying: boolean;
 }
 
@@ -173,7 +186,6 @@ export default function MusicPage() {
   const [isInserting, setIsInserting] = useState(false);
   const [dragOffset, setDragOffset] = useState(0);
   const [isFastForwarding, setIsFastForwarding] = useState(false);
-  const [isRewinding, setIsRewinding] = useState(false);
   const [isFlipping, setIsFlipping] = useState(false);
   const [editingSide, setEditingSide] = useState<SideName | null>(null);
   const [editedTitle, setEditedTitle] = useState('');
@@ -182,21 +194,20 @@ export default function MusicPage() {
   const [isAudioReady, setIsAudioReady] = useState(false);
   const [audioLoadAttempt, setAudioLoadAttempt] = useState(0);
   const [waveformPeaks, setWaveformPeaks] = useState<number[]>([]);
+  const [frequencyWaveform, setFrequencyWaveform] = useState<FrequencyWaveformBar[]>([]);
+  const [frequencyWaveformError, setFrequencyWaveformError] = useState<string | null>(null);
   const [waveformError, setWaveformError] = useState<string | null>(null);
   const [playbackTime, setPlaybackTime] = useState(0);
   const [playbackDuration, setPlaybackDuration] = useState(0);
   const [isJogging, setIsJogging] = useState(false);
-  const [platterAngle, setPlatterAngle] = useState(0);
   const [volume, setVolume] = useState(1);
   const [soundCloudReady, setSoundCloudReady] = useState(false);
   const pointerStartY = useRef<number | null>(null);
-  const pressedTransportKeysRef = useRef(new Set<HTMLButtonElement>());
   const [trackAudioPlayer] = useState(() => {
     const player = new SupabaseWorkletAudioPlayer();
     player.onEnded = () => setIsPlaying(false);
     return player;
   });
-  const [vhsNoisePlayer] = useState(() => new WebAudioPlayer());
   const [insertionSoundPlayer] = useState(() => new WebAudioPlayer());
   const [buttonClickPlayer] = useState(() => new WebAudioPlayer());
   const reelFaceRef = useRef<HTMLDivElement>(null);
@@ -208,6 +219,9 @@ export default function MusicPage() {
   const soundCloudWidgetRef = useRef<SoundCloudWidget | null>(null);
   const rewindTimer = useRef<number | null>(null);
   const progressSaveTimer = useRef<number | null>(null);
+  const progressWriteRef = useRef<Promise<void>>(Promise.resolve());
+  const progressGenerationRef = useRef(0);
+  const ejectedSideRef = useRef<string | null>(null);
   const playerRef = useRef<HTMLElement>(null);
   const shelfPointerDragRef = useRef<ShelfPointerDrag | null>(null);
   const suppressNextCassetteClickRef = useRef(false);
@@ -246,6 +260,7 @@ export default function MusicPage() {
   useEffect(() => {
     setPlaybackTime(0);
     setPlaybackDuration(0);
+    if (activeSideId && ejectedSideRef.current === activeSideId) ejectedSideRef.current = null;
   }, [activeSideId]);
 
   const sendVideoCommand = (func: string, args: unknown[] = []) => {
@@ -309,7 +324,10 @@ export default function MusicPage() {
 
   useEffect(() => {
     let cancelled = false;
+    const waveformController = new AbortController();
     setWaveformPeaks([]);
+    setFrequencyWaveform([]);
+    setFrequencyWaveformError(null);
     setWaveformError(null);
     setIsAudioReady(false);
     setPlaybackTime(0);
@@ -329,6 +347,13 @@ export default function MusicPage() {
         setPlaybackDuration(buffer.duration);
         setWaveformPeaks(createWaveformPeaks(buffer));
         setIsAudioReady(true);
+        void createFrequencyWaveform(buffer, waveformController.signal).then((bars) => {
+          if (!cancelled) setFrequencyWaveform(bars);
+        }).catch((error: unknown) => {
+          if (!cancelled) {
+            setFrequencyWaveformError(error instanceof Error ? error.message : 'Frequency waveform could not be analyzed.');
+          }
+        });
       } catch (error) {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : 'Track audio could not be loaded.';
@@ -342,6 +367,7 @@ export default function MusicPage() {
     void loadTrack();
     return () => {
       cancelled = true;
+      waveformController.abort();
       trackAudioPlayer.stop();
     };
   }, [activeSideId, audioLoadAttempt, audioSource, currentSide?.kind, trackAudioPlayer]);
@@ -357,16 +383,14 @@ export default function MusicPage() {
         if (!cancelled) setStorageError(errorMessage);
       });
     };
-    loadEffect(vhsNoisePlayer, '/audio/vhs-noise.ogg', 'VHS noise could not be loaded.');
     loadEffect(insertionSoundPlayer, '/audio/cassette-insert.ogg', 'Cassette sound could not be loaded.');
     loadEffect(buttonClickPlayer, '/audio/clicking.ogg', 'Button sound could not be loaded.');
     return () => {
       cancelled = true;
-      vhsNoisePlayer.stop();
       insertionSoundPlayer.stop();
       buttonClickPlayer.stop();
     };
-  }, [buttonClickPlayer, insertionSoundPlayer, vhsNoisePlayer]);
+  }, [buttonClickPlayer, insertionSoundPlayer]);
 
   useEffect(() => {
     if (currentSide?.kind !== 'soundcloud') {
@@ -452,6 +476,7 @@ export default function MusicPage() {
     let cancelled = false;
     const restorePosition = async () => {
       try {
+        await progressWriteRef.current;
         const seconds = await loadPlaybackProgress(activeSideId);
         if (cancelled || seconds <= 0) return;
         if (currentSide.kind === 'audio') {
@@ -502,29 +527,49 @@ export default function MusicPage() {
 
   useEffect(() => {
     trackAudioPlayer.setVolume(volume);
-    vhsNoisePlayer.setVolume(volume * 0.6);
     insertionSoundPlayer.setVolume(volume * 0.6);
     buttonClickPlayer.setVolume(volume * 0.55);
     if (currentSide?.kind === 'video') sendVideoCommand('setVolume', [Math.round(volume * 100)]);
     if (currentSide?.kind === 'soundcloud' && soundCloudReady) {
       soundCloudWidgetRef.current?.setVolume(Math.round(volume * 100));
     }
-  }, [buttonClickPlayer, currentSide, insertionSoundPlayer, soundCloudReady, trackAudioPlayer, vhsNoisePlayer, volume]);
+  }, [buttonClickPlayer, currentSide, insertionSoundPlayer, soundCloudReady, trackAudioPlayer, volume]);
 
   useEffect(() => {
     trackAudioPlayer.setPlaybackRate(isFastForwarding && !isJogging ? 4 : 1);
   }, [isFastForwarding, isJogging, trackAudioPlayer]);
+
+  useEffect(() => {
+    if (!isPlaying || isJogging) return;
+    let lastTime = performance.now();
+    let animationFrame = 0;
+    const rotate = (time: number) => {
+      platterAngleRef.current = (platterAngleRef.current + (time - lastTime) / 100) % 360;
+      lastTime = time;
+      if (reelFaceRef.current) {
+        reelFaceRef.current.style.transform = `rotate(${platterAngleRef.current}deg)`;
+      }
+      animationFrame = requestAnimationFrame(rotate);
+    };
+    animationFrame = requestAnimationFrame(rotate);
+    return () => cancelAnimationFrame(animationFrame);
+  }, [isJogging, isPlaying]);
+
+  useEffect(() => () => {
+    turntableDragRef.current = null;
+    trackAudioPlayer.endScratch();
+    setIsJogging(false);
+  }, [activeSideId, trackAudioPlayer]);
 
   useEffect(() => () => {
     if (rewindTimer.current !== null) window.clearInterval(rewindTimer.current);
     if (progressSaveTimer.current !== null) window.clearTimeout(progressSaveTimer.current);
     if (insertionTimerRef.current !== null) window.clearTimeout(insertionTimerRef.current);
     trackAudioPlayer.stop();
-    vhsNoisePlayer.stop();
     insertionSoundPlayer.stop();
     soundCloudWidgetRef.current?.pause();
     buttonClickPlayer.stop();
-  }, [buttonClickPlayer, insertionSoundPlayer, trackAudioPlayer, vhsNoisePlayer]);
+  }, [buttonClickPlayer, insertionSoundPlayer, trackAudioPlayer]);
 
   const persistCassette = (cassette: Cassette) => {
     setCassettes((current) => current.map((item) => item.id === cassette.id ? cassette : item));
@@ -553,41 +598,6 @@ export default function MusicPage() {
 
   const handleHardwareButtonKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
     if (!event.repeat && (event.key === ' ' || event.key === 'Enter')) playButtonTouchSound();
-  };
-
-  const playTactileSound = (phase: 'down' | 'up') => {
-    void playTactileSwitchSound(phase, volume * 0.55).catch(() => {
-      setStorageError('Mechanical switch sound could not be played.');
-    });
-  };
-
-  const pressTransportKey = (button: HTMLButtonElement) => {
-    if (pressedTransportKeysRef.current.has(button)) return;
-    pressedTransportKeysRef.current.add(button);
-    playTactileSound('down');
-  };
-
-  const releaseTransportKey = (button: HTMLButtonElement) => {
-    if (!pressedTransportKeysRef.current.delete(button)) return;
-    playTactileSound('up');
-  };
-
-  const handleTransportPointerDown = (event: PointerEvent<HTMLButtonElement>) => {
-    if (event.isPrimary && event.button === 0) pressTransportKey(event.currentTarget);
-  };
-
-  const handleTransportPointerUp = (event: PointerEvent<HTMLButtonElement>) => {
-    releaseTransportKey(event.currentTarget);
-  };
-
-  const handleTransportKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
-    if (!event.repeat && (event.key === ' ' || event.key === 'Enter')) {
-      pressTransportKey(event.currentTarget);
-    }
-  };
-
-  const handleTransportKeyUp = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
-    if (event.key === ' ' || event.key === 'Enter') releaseTransportKey(event.currentTarget);
   };
 
   const selectTrackFromList = (track: TrackListItem) => {
@@ -793,12 +803,25 @@ export default function MusicPage() {
     if (!activeCassette) return;
     if (currentSide?.kind === 'audio') {
       trackAudioPlayer.pause();
-      saveProgress(true);
     }
     if (isPlaying) {
+      saveProgress(true);
       setIsPlaying(false);
       return;
     }
+    progressGenerationRef.current += 1;
+    ejectedSideRef.current = activeSideId;
+    if (progressSaveTimer.current !== null) {
+      window.clearTimeout(progressSaveTimer.current);
+      progressSaveTimer.current = null;
+    }
+    if (activeSideId && (currentSide?.kind === 'audio' || currentSide?.kind === 'soundcloud')) {
+      queueProgressSave(activeSideId, 0);
+    }
+    trackAudioPlayer.stop();
+    soundCloudWidgetRef.current?.pause();
+    soundCloudWidgetRef.current?.seekTo(0);
+    setPlaybackTime(0);
     setActiveCassetteId(null);
     setIsPlaying(false);
   };
@@ -829,7 +852,6 @@ export default function MusicPage() {
   };
 
   const beginRewind = () => {
-    setIsRewinding(true);
     if (currentSide?.kind === 'audio' && isAudioReady) {
       trackAudioPlayer.pause();
       saveProgress(true);
@@ -847,7 +869,6 @@ export default function MusicPage() {
   };
 
   const endRewind = () => {
-    setIsRewinding(false);
     if (rewindTimer.current !== null) {
       window.clearInterval(rewindTimer.current);
       rewindTimer.current = null;
@@ -855,23 +876,27 @@ export default function MusicPage() {
     if (currentSide?.kind === 'audio') saveProgress(true);
   };
 
+  const queueProgressSave = (key: string, seconds: number) => {
+    progressWriteRef.current = progressWriteRef.current.then(() => savePlaybackProgress(key, seconds)).catch(() => {
+      setStorageError('Playback position could not be saved.');
+    });
+  };
+
   const saveProgress = (immediate = false) => {
     const audio = currentSide?.kind === 'audio' ? trackAudioPlayer : null;
     const widget = currentSide?.kind === 'soundcloud' ? soundCloudWidgetRef.current : null;
-    if (!activeSideId || (!audio && !widget)) return;
+    if (!activeSideId || ejectedSideRef.current === activeSideId || (!audio && !widget)) return;
     if (progressSaveTimer.current !== null) window.clearTimeout(progressSaveTimer.current);
     const key = activeSideId;
+    const generation = progressGenerationRef.current;
     const audioPosition = audio?.currentTime;
     const save = () => {
+      if (generation !== progressGenerationRef.current) return;
       if (audio) {
-        void savePlaybackProgress(key, audioPosition ?? 0).catch(() => {
-          setStorageError('Playback position could not be saved.');
-        });
+        queueProgressSave(key, audioPosition ?? 0);
       } else {
         widget?.getPosition((position) => {
-          void savePlaybackProgress(key, position / 1000).catch(() => {
-            setStorageError('Playback position could not be saved.');
-          });
+          if (generation === progressGenerationRef.current) queueProgressSave(key, position / 1000);
         });
       }
     };
@@ -935,27 +960,24 @@ export default function MusicPage() {
     if (!canSeekTurntable || (!audio && !widget) || !event.isPrimary || event.button !== 0) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
-    if (reelFaceRef.current) {
-      const transform = window.getComputedStyle(reelFaceRef.current).transform;
-      if (transform !== 'none') {
-        const matrix = new DOMMatrixReadOnly(transform);
-        platterAngleRef.current = Math.atan2(matrix.b, matrix.a) * 180 / Math.PI;
-        setPlatterAngle(platterAngleRef.current);
-      }
-    }
     audio?.pause();
     widget?.pause();
-    if (vhsNoisePlayer.isReady) {
-      void vhsNoisePlayer.play({ loop: true, restart: true }).catch(() => {
-        setStorageError('VHS noise could not be played.');
-      });
-    }
     turntableDragRef.current = {
       pointerId: event.pointerId,
       lastAngle: turntableAngle(event),
       lastTrackTime: audio?.currentTime ?? playbackTime,
+      lastMoveTime: event.timeStamp,
       wasPlaying: isPlaying,
     };
+    if (audio) {
+      void audio.beginScratch().catch(() => {
+        if (turntableDragRef.current?.pointerId !== event.pointerId) return;
+        audio.endScratch();
+        setStorageError('The track scratch sound could not be played.');
+      });
+    } else {
+      setStorageError('Scratch audio is unavailable for SoundCloud tracks.');
+    }
     setIsJogging(true);
     if (isPlaying) setIsPlaying(false);
   };
@@ -973,18 +995,20 @@ export default function MusicPage() {
     if (Math.abs(angleDelta) <= 0.002) return;
     const secondsPerRevolution = 8;
     const timeDelta = angleDelta / (Math.PI * 2) * secondsPerRevolution;
+    const previousTrackTime = drag.lastTrackTime;
     drag.lastTrackTime = Math.max(
       0,
       Math.min(playbackDuration, drag.lastTrackTime + timeDelta),
     );
     if (audio) {
-      void audio.seek(drag.lastTrackTime).catch(() => {
-        setStorageError('The track could not be seeked.');
-      });
+      audio.scratch(previousTrackTime, drag.lastTrackTime, Math.max(0.02, Math.min(0.12, (event.timeStamp - drag.lastMoveTime) / 1000)));
     }
     else widget?.seekTo(drag.lastTrackTime * 1000);
-    platterAngleRef.current += angleDelta * 180 / Math.PI;
-    setPlatterAngle(platterAngleRef.current);
+    drag.lastMoveTime = event.timeStamp;
+    platterAngleRef.current = (platterAngleRef.current + angleDelta * 180 / Math.PI) % 360;
+    if (reelFaceRef.current) {
+      reelFaceRef.current.style.transform = `rotate(${platterAngleRef.current}deg)`;
+    }
     setPlaybackTime(drag.lastTrackTime);
     saveProgress();
   };
@@ -994,10 +1018,9 @@ export default function MusicPage() {
     if (!drag || drag.pointerId !== event.pointerId) return;
     turntableDragRef.current = null;
     setIsJogging(false);
+    trackAudioPlayer.endScratch();
     trackAudioPlayer.pause();
     soundCloudWidgetRef.current?.pause();
-    vhsNoisePlayer.pause();
-    void vhsNoisePlayer.seek(0);
     saveProgress(true);
     if (resumePlayback && drag.wasPlaying && currentSide?.kind === 'audio') {
       void trackAudioPlayer.play().then(() => setIsPlaying(true)).catch(() => {
@@ -1040,6 +1063,10 @@ export default function MusicPage() {
     || (currentSide?.kind === 'soundcloud' && soundCloudReady)
   );
   const canSeekWaveform = canSeekTurntable && waveformPeaks.length > 0;
+  const zoomBarCount = waveformBarsPerSecond * 10;
+  const zoomCenter = playbackDuration > 0
+    ? Math.floor(playbackTime / playbackDuration * frequencyWaveform.length)
+    : 0;
   const formattedDeckTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60).toString().padStart(2, '0');
     const wholeSeconds = Math.floor(seconds % 60).toString().padStart(2, '0');
@@ -1179,9 +1206,9 @@ export default function MusicPage() {
           aria-label="Cassette player"
           aria-hidden={!isPlayerExpanded}
           inert={!isPlayerExpanded}
-          className={`tp7-inspired-deck relative mx-auto w-full max-w-[500px] overflow-hidden rounded-[8px] border border-[#f4f4f6] px-3 py-3 text-[#202124] shadow-[0_14px_28px_rgb(0_0_0_/_55%)] transition sm:px-5 sm:py-5 ${isDragging ? 'scale-[1.01]' : ''}`}
+          className={`tp7-inspired-deck relative mx-auto w-full max-w-[500px] overflow-hidden rounded-[8px] border border-[#414349] px-3 py-3 text-[#e4e5e8] shadow-[0_14px_28px_rgb(0_0_0_/_55%)] transition sm:px-5 sm:py-5 ${isDragging ? 'scale-[1.01]' : ''}`}
         >
-          <div className="tp7-unit-header flex items-center justify-between border-b border-black/15 pb-2">
+          <div className="tp7-unit-header flex items-center justify-between border-b border-white/10 pb-2">
             <div className="flex items-center gap-2">
               <span className={`tp7-status-led ${isPlaying ? 'is-active' : ''}`} />
               <span className="text-[8px] font-semibold uppercase tracking-[0.22em] text-neutral-400">CHRIS // FIELD PLAYER</span>
@@ -1286,6 +1313,38 @@ export default function MusicPage() {
                   <span>{formattedPlaybackTime(playbackTime)} / {formattedPlaybackTime(playbackDuration)}</span>
                 </div>
                 {waveformPeaks.length > 0 ? (
+                  <>
+                  <div className="cdj-frequency-header">
+                    <span>10 SEC DETAIL</span>
+                    <span><b className="cdj-frequency-low">LOW</b> / <b className="cdj-frequency-mid">MID</b> / <b className="cdj-frequency-high">HIGH</b></span>
+                  </div>
+                  {frequencyWaveform.length > 0 ? (
+                    <div className="cdj-frequency-waveform" role="img" aria-label="10 second waveform around the current position, colored by low, mid and high frequencies">
+                      {Array.from({ length: zoomBarCount }, (_, index) => {
+                        const bar = frequencyWaveform[zoomCenter - zoomBarCount / 2 + index];
+                        const energy = bar ? bar.low + bar.mid + bar.high : 0;
+                        const lowEnd = energy ? bar.low / energy * 100 : 0;
+                        const midEnd = energy ? (bar.low + bar.mid) / energy * 100 : 0;
+                        return (
+                          <span
+                            key={index}
+                            className="cdj-frequency-bar"
+                            style={{
+                              height: bar ? `${Math.max(3, bar.peak * 100)}%` : '0%',
+                              background: energy
+                                ? `linear-gradient(to top, #ff6552 ${lowEnd}%, #e8c252 ${lowEnd}% ${midEnd}%, #63bdf5 ${midEnd}%)`
+                                : 'transparent',
+                            }}
+                          />
+                        );
+                      })}
+                      <span className="cdj-frequency-playhead" aria-hidden="true" />
+                    </div>
+                  ) : (
+                    <div className="cdj-frequency-placeholder" role="status">
+                      {frequencyWaveformError ?? 'Analyzing frequency waveform...'}
+                    </div>
+                  )}
                   <div
                     role="slider"
                     aria-label="Track waveform seek"
@@ -1322,6 +1381,7 @@ export default function MusicPage() {
                       style={{ left: `${turntableProgress * 100}%` }}
                     />
                   </div>
+                  </>
                 ) : (
                   <div className="cdj-waveform-placeholder" role="status" aria-live="polite">
                     {waveformError ? (
@@ -1404,7 +1464,7 @@ export default function MusicPage() {
                     if (event.animationName === 'cassette-flip') setIsFlipping(false);
                   }}
                   style={{
-                    background: `conic-gradient(from 0deg, #ff4a1c ${turntableProgress * 100}%, #999ba1 ${turntableProgress * 100}% 100%)`,
+                    background: `conic-gradient(from 0deg, #ff4a1c ${turntableProgress * 100}%, #3b3d42 ${turntableProgress * 100}% 100%)`,
                   }}
                   className={`tp7-reel-face tp7-drive-platter relative flex aspect-square w-[184px] touch-none select-none items-center justify-center rounded-full p-[7px] outline-none sm:w-[204px] ${
                     canSeekTurntable ? 'cursor-grab focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff4a1c] active:cursor-grabbing' : 'cursor-default'
@@ -1414,22 +1474,16 @@ export default function MusicPage() {
                 >
                   <div
                     ref={reelFaceRef}
-                    style={isJogging ? { transform: `rotate(${platterAngle}deg)` } : undefined}
-                    className={`tp7-reel-face-inner pointer-events-none absolute inset-[7px] flex items-center justify-center overflow-hidden rounded-full border ${
-                      isPlaying && !isJogging ? 'tape-reel-spinning' : ''
-                    }`}
+                    className="tp7-reel-face-inner pointer-events-none absolute inset-[7px] flex items-center justify-center overflow-hidden rounded-full border"
                   >
                     <span className="tp7-platter-groove absolute inset-[7px] rounded-full border" />
                     <span className="tp7-platter-groove absolute inset-[15px] rounded-full border" />
                     <span className="tp7-platter-groove absolute inset-[25px] rounded-full border" />
                     <span className="tp7-platter-index-mark tp7-platter-index-mark-left" />
                     <span className="tp7-platter-index-mark tp7-platter-index-mark-right" />
+                    <span className="tp7-platter-index-mark tp7-platter-index-mark-top" />
                     <div className="tp7-reel-hub relative flex h-16 w-16 items-center justify-center rounded-full border sm:h-[72px] sm:w-[72px]">
                       <span className="tp7-reel-hub-ring absolute rounded-full" />
-                      <span className="tp7-reel-hub-label">
-                        <span>CHRIS</span>
-                        <span>MOTOR</span>
-                      </span>
                     </div>
                   </div>
                 </div>
@@ -1460,135 +1514,29 @@ export default function MusicPage() {
           </div>
 
           <div className="cdj-transport-controls" role="group" aria-label="Transport controls">
-            <button
-              type="button"
-              aria-label="Rewind"
-              title="Hold to rewind"
-              data-led-state={isRewinding ? 'on-red' : undefined}
-              disabled={!currentSide}
-              onPointerDown={(event) => { handleTransportPointerDown(event); beginRewind(); }}
-              onPointerUp={(event) => { handleTransportPointerUp(event); endRewind(); }}
-              onPointerCancel={(event) => { handleTransportPointerUp(event); endRewind(); }}
-              onPointerLeave={(event) => { handleTransportPointerUp(event); endRewind(); }}
-              onLostPointerCapture={(event) => { handleTransportPointerUp(event); endRewind(); }}
-              onKeyDown={handleTransportKeyDown}
-              onKeyUp={handleTransportKeyUp}
-              className={`cdj-control-button ${isRewinding ? 'cdj-control-pressed' : ''}`}
-            >
+            <button type="button" aria-label="Rewind" title="Hold to rewind" disabled={!currentSide} onPointerDown={(event) => { handleHardwareButtonPointerDown(event); beginRewind(); }} onPointerUp={endRewind} onPointerCancel={endRewind} onPointerLeave={endRewind} onKeyDown={handleHardwareButtonKeyDown} className="cdj-control-button">
               <span className="cdj-control-label">REW</span>
-              <span className="cdj-control-led" aria-hidden="true" />
-              <Rewind className="cdj-control-icon" aria-hidden="true" />
+              <Rewind className="cdj-control-icon" />
             </button>
-            <button
-              type="button"
-              aria-label="Previous cassette"
-              disabled={!activeCassette}
-              onPointerDown={handleTransportPointerDown}
-              onPointerUp={handleTransportPointerUp}
-              onPointerCancel={handleTransportPointerUp}
-              onPointerLeave={handleTransportPointerUp}
-              onLostPointerCapture={handleTransportPointerUp}
-              onKeyDown={handleTransportKeyDown}
-              onKeyUp={handleTransportKeyUp}
-              onClick={() => changeCassette(-1)}
-              className="cdj-control-button cdj-control-light"
-            >
+            <button type="button" aria-label="Previous cassette" onPointerDown={handleHardwareButtonPointerDown} onKeyDown={handleHardwareButtonKeyDown} onClick={() => changeCassette(-1)} disabled={!activeCassette} className="cdj-control-button cdj-control-light">
               <span className="cdj-control-label">PREV</span>
-              <span className="cdj-control-led" aria-hidden="true" />
-              <SkipBack className="cdj-control-icon" aria-hidden="true" />
+              <SkipBack className="cdj-control-icon" />
             </button>
-            <button
-              type="button"
-              aria-label={isPlaying ? 'Pause' : 'Play'}
-              aria-pressed={isPlaying}
-              data-led-state={isPlaying ? 'on-green' : undefined}
-              disabled={!currentSide || (currentSide.kind === 'audio' && !isAudioReady)}
-              onPointerDown={handleTransportPointerDown}
-              onPointerUp={handleTransportPointerUp}
-              onPointerCancel={handleTransportPointerUp}
-              onPointerLeave={handleTransportPointerUp}
-              onLostPointerCapture={handleTransportPointerUp}
-              onKeyDown={handleTransportKeyDown}
-              onKeyUp={handleTransportKeyUp}
-              onClick={togglePlay}
-              className="cdj-control-button cdj-control-play"
-            >
+            <button type="button" aria-label={isPlaying ? 'Pause' : 'Play'} onPointerDown={handleHardwareButtonPointerDown} onKeyDown={handleHardwareButtonKeyDown} onClick={togglePlay} disabled={!currentSide || (currentSide.kind === 'audio' && !isAudioReady)} className={`cdj-control-button cdj-control-play ${isPlaying ? 'cdj-control-lit' : ''}`}>
               <span className="cdj-control-label">{isPlaying ? 'PAUSE' : 'PLAY'}</span>
-              <span className="cdj-control-led" aria-hidden="true" />
-              {isPlaying
-                ? <Pause className="cdj-control-icon" aria-hidden="true" />
-                : <Play className="cdj-control-icon fill-current" aria-hidden="true" />}
+              {isPlaying ? <Pause className="cdj-control-icon" /> : <Play className="cdj-control-icon" />}
             </button>
-            <button
-              type="button"
-              aria-label="Next cassette"
-              disabled={!activeCassette}
-              onPointerDown={handleTransportPointerDown}
-              onPointerUp={handleTransportPointerUp}
-              onPointerCancel={handleTransportPointerUp}
-              onPointerLeave={handleTransportPointerUp}
-              onLostPointerCapture={handleTransportPointerUp}
-              onKeyDown={handleTransportKeyDown}
-              onKeyUp={handleTransportKeyUp}
-              onClick={() => changeCassette(1)}
-              className="cdj-control-button cdj-control-light"
-            >
+            <button type="button" aria-label="Next cassette" onPointerDown={handleHardwareButtonPointerDown} onKeyDown={handleHardwareButtonKeyDown} onClick={() => changeCassette(1)} disabled={!activeCassette} className="cdj-control-button cdj-control-light">
               <span className="cdj-control-label">NEXT</span>
-              <span className="cdj-control-led" aria-hidden="true" />
-              <SkipForward className="cdj-control-icon" aria-hidden="true" />
+              <SkipForward className="cdj-control-icon" />
             </button>
-            <button
-              type="button"
-              aria-label="Fast forward"
-              title="Hold to fast-forward"
-              data-led-state={isFastForwarding ? 'on-red' : undefined}
-              disabled={!currentSide || currentSide.kind === 'soundcloud'}
-              onPointerDown={(event) => {
-                handleTransportPointerDown(event);
-                setIsFastForwarding(true);
-              }}
-              onPointerUp={(event) => {
-                handleTransportPointerUp(event);
-                setIsFastForwarding(false);
-              }}
-              onPointerCancel={(event) => {
-                handleTransportPointerUp(event);
-                setIsFastForwarding(false);
-              }}
-              onPointerLeave={(event) => {
-                handleTransportPointerUp(event);
-                setIsFastForwarding(false);
-              }}
-              onLostPointerCapture={(event) => {
-                handleTransportPointerUp(event);
-                setIsFastForwarding(false);
-              }}
-              onKeyDown={handleTransportKeyDown}
-              onKeyUp={handleTransportKeyUp}
-              className={`cdj-control-button ${isFastForwarding ? 'cdj-control-pressed' : ''}`}
-            >
+            <button type="button" aria-label="Fast forward" title="Hold to fast-forward" disabled={!currentSide || currentSide.kind === 'soundcloud'} onPointerDown={(event) => { handleHardwareButtonPointerDown(event); setIsFastForwarding(true); }} onPointerUp={() => setIsFastForwarding(false)} onPointerCancel={() => setIsFastForwarding(false)} onPointerLeave={() => setIsFastForwarding(false)} onKeyDown={handleHardwareButtonKeyDown} className={`cdj-control-button ${isFastForwarding ? 'cdj-control-active' : ''}`}>
               <span className="cdj-control-label">FWD</span>
-              <span className="cdj-control-led" aria-hidden="true" />
-              <FastForward className="cdj-control-icon" aria-hidden="true" />
+              <FastForward className="cdj-control-icon" />
             </button>
-            <button
-              type="button"
-              aria-label={isPlaying ? 'Stop' : 'Eject'}
-              title={isPlaying ? 'Stop' : 'Eject cassette'}
-              disabled={!activeCassette}
-              onPointerDown={handleTransportPointerDown}
-              onPointerUp={handleTransportPointerUp}
-              onPointerCancel={handleTransportPointerUp}
-              onPointerLeave={handleTransportPointerUp}
-              onLostPointerCapture={handleTransportPointerUp}
-              onKeyDown={handleTransportKeyDown}
-              onKeyUp={handleTransportKeyUp}
-              onClick={stopOrEject}
-              className="cdj-control-button cdj-control-light"
-            >
+            <button type="button" aria-label={isPlaying ? 'Stop' : 'Eject'} title={isPlaying ? 'Stop' : 'Eject cassette'} onPointerDown={handleHardwareButtonPointerDown} onKeyDown={handleHardwareButtonKeyDown} onClick={stopOrEject} disabled={!activeCassette} className="cdj-control-button cdj-control-light">
               <span className="cdj-control-label">{isPlaying ? 'STOP' : 'EJECT'}</span>
-              <span className="cdj-control-led" aria-hidden="true" />
-              <Square className="cdj-control-icon fill-current" aria-hidden="true" />
+              <Square className="cdj-control-icon" />
             </button>
           </div>
 
@@ -1596,13 +1544,8 @@ export default function MusicPage() {
             <button
               type="button"
               aria-label={`Flip to side ${activeSide === 'A' ? 'B' : 'A'}`}
-              onPointerDown={handleTransportPointerDown}
-              onPointerUp={handleTransportPointerUp}
-              onPointerCancel={handleTransportPointerUp}
-              onPointerLeave={handleTransportPointerUp}
-              onLostPointerCapture={handleTransportPointerUp}
-              onKeyDown={handleTransportKeyDown}
-              onKeyUp={handleTransportKeyUp}
+              onPointerDown={handleHardwareButtonPointerDown}
+              onKeyDown={handleHardwareButtonKeyDown}
               onClick={flipSide}
               disabled={!activeCassette}
               className="tp7-footer-key"
@@ -1614,13 +1557,8 @@ export default function MusicPage() {
             <button
               type="button"
               aria-label={activeCassette?.locked ? 'Unlock cassette' : 'Lock cassette'}
-              onPointerDown={handleTransportPointerDown}
-              onPointerUp={handleTransportPointerUp}
-              onPointerCancel={handleTransportPointerUp}
-              onPointerLeave={handleTransportPointerUp}
-              onLostPointerCapture={handleTransportPointerUp}
-              onKeyDown={handleTransportKeyDown}
-              onKeyUp={handleTransportKeyUp}
+              onPointerDown={handleHardwareButtonPointerDown}
+              onKeyDown={handleHardwareButtonKeyDown}
               onClick={() => activeCassette && persistCassette({ ...activeCassette, locked: !activeCassette.locked })}
               disabled={!activeCassette}
               className={`tp7-footer-key ${activeCassette?.locked ? 'is-locked' : ''}`}

@@ -9,30 +9,6 @@ function getAudioContext() {
   return sharedAudioContext;
 }
 
-export function playTactileSwitchSound(phase: 'down' | 'up', volume: number) {
-  const level = Math.max(0, Math.min(1, volume));
-  if (level === 0) return Promise.resolve();
-
-  const context = getAudioContext();
-  const now = context.currentTime;
-  const oscillator = context.createOscillator();
-  const gain = context.createGain();
-  const isDown = phase === 'down';
-
-  oscillator.type = 'triangle';
-  oscillator.frequency.setValueAtTime(isDown ? 1900 : 1400, now);
-  oscillator.frequency.exponentialRampToValueAtTime(isDown ? 180 : 140, now + 0.012);
-
-  gain.gain.setValueAtTime((isDown ? 0.35 : 0.18) * level, now);
-  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.014);
-  oscillator.connect(gain);
-  gain.connect(context.destination);
-  oscillator.start(now);
-  oscillator.stop(now + 0.015);
-
-  return context.state === 'suspended' ? context.resume() : Promise.resolve();
-}
-
 export class WebAudioPlayer {
   private buffer: AudioBuffer | null = null;
   private source: AudioBufferSourceNode | null = null;
