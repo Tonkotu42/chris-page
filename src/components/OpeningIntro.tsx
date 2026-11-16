@@ -29,10 +29,10 @@ export const OpeningIntro: React.FC<OpeningIntroProps> = ({ onComplete }) => {
     startedRef.current = true;
     void startupAudio.playStartupSound();
 
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      onComplete();
-      return;
-    }
+    // if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    //   onComplete();
+    //   return;
+    // }
 
     overlayRef.current?.querySelectorAll<HTMLElement>('[data-intro-piece]').forEach((element, index) => {
       const bounds = element.getBoundingClientRect();

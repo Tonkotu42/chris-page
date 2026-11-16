@@ -654,7 +654,7 @@
   to { visibility: hidden; }
 }
 
-@media (prefers-reduced-motion: reduce) {
+/* @media (prefers-reduced-motion: reduce) {
   .opening-logo-tile,
   .opening-start-arrow,
   .opening-title-track,
@@ -662,4 +662,4 @@
   .opening-start:focus-visible::before {
     animation: none;
   }
-}
+} */
