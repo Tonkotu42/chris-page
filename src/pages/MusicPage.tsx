@@ -32,6 +32,8 @@ import { nextQueueEntry } from '../lib/musicQueue';
 import type { QueueEntry } from '../lib/musicQueue';
 import { initialCassettes } from '../lib/musicCatalog';
 import './MusicPage.css';
+import { AnalogVU } from '../components/AnalogVU';
+import { RackGEQ } from '../components/RackGEQ';
 
 interface SoundCloudWidgetEvent {
   currentPosition?: number;
@@ -1378,6 +1380,7 @@ const changeCassette = (direction: -1 | 1) => {
       </header>
 
       <main className="music-room mx-auto flex min-h-[calc(100svh-65px)] max-w-6xl flex-col px-6 pb-44 pt-8 md:pt-12">
+                 <AnalogVU player={trackAudioPlayer} isPlaying={isPlaying} initialX={40} initialY={120} />
         <div className="flex items-end justify-between gap-5">
           <div>
             <p className="text-[10px] uppercase tracking-[0.32em] text-neutral-500">CHRIS / MUSIC</p>
@@ -1413,11 +1416,11 @@ const changeCassette = (direction: -1 | 1) => {
                   setPendingCassetteId(cassette.id);
                   setDragOffset(0);
                 }}
-                className={`cassette-shelf-tape group relative flex items-center border border-white/20 bg-gradient-to-br ${cassette.color} text-left shadow-[0_8px_18px_#000] transition duration-200 hover:-translate-y-1 hover:border-white/50 ${
-                  activeCassetteId === cassette.id ? 'brightness-125' : 'brightness-90 hover:brightness-110'
-                } ${dropTargetId === cassette.id ? 'cassette-drop-target' : ''} ${
-                  snappedTapeId === cassette.id ? 'cassette-snap-in' : ''
-                } ${draggedTapeId === cassette.id ? 'cassette-being-dragged' : ''}`}
+              className={`cassette-shelf-tape group relative flex items-center border border-white/20 bg-gradient-to-br ${cassette.color} text-left shadow-[0_8px_18px_#000] transition duration-200 hover:-translate-y-1 hover:border-white/50 ${
+              dropTargetId === cassette.id ? 'cassette-drop-target' : ''
+              } ${
+              snappedTapeId === cassette.id ? 'cassette-snap-in' : ''
+              } ${draggedTapeId === cassette.id ? 'cassette-being-dragged' : ''}`}
               >
                 <span className="cassette-shelf-tape-seam" />
                 <span className="music-shelf-index">{String(index + 1).padStart(2, '0')}</span>
@@ -1441,7 +1444,6 @@ const changeCassette = (direction: -1 | 1) => {
           <div className="music-room-bar" aria-hidden="true">
             <span>CHRIS<br />LISTENING BAR</span><i /><i /><i />
           </div>
-          <div className="music-room-table" aria-hidden="true" />
           {isPlaying && (
             <div className="music-room-dancer" aria-hidden="true">
               <svg viewBox="0 0 32 40" shapeRendering="crispEdges">
@@ -1470,11 +1472,13 @@ const changeCassette = (direction: -1 | 1) => {
               </svg>
             </div>
           )}
-          <div className="music-room-feature" key={activeCassetteId ?? 'empty'}>
+          
+          <div className="music-room-feature">
             <div className="music-room-art">
               <img src="/music-artwork.png" alt="" />
               <span>{activeCassette ? currentSideTitle : 'CHRIS / MUSIC'}</span>
             </div>
+            
             <div className={`music-room-tape ${isPlaying ? 'is-playing' : ''}`} aria-hidden="true">
               <div className="music-room-tape-label">
                 <span>CHRIS // SIDE {activeCassette ? activeSide : 'A'}</span>

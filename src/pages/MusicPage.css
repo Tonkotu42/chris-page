@@ -25,30 +25,51 @@
   width: 100%;
   margin-right: auto;
   margin-left: auto;
+  perspective: 1200px;
 }
 
 .music-page .cassette-shelf-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 18px;
-  padding: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px; /* 隙間を詰める */
+  padding: 20px 14px;
   border: 2px solid #eee;
-  background:
-    linear-gradient(90deg, transparent calc(50% - 3px), #eee calc(50% - 3px), #eee calc(50% + 3px), transparent calc(50% + 3px)),
-    repeating-linear-gradient(to bottom, #111 0 69px, #555 69px 73px, #050505 73px 78px);
-  box-shadow: 6px 6px 0 #292929;
+  background: #0a0a0a;
+  box-shadow: inset 0 20px 20px -20px rgba(0,0,0,0.8), 6px 6px 0 #292929;
+  transform-style: preserve-3d;
 }
 
 .music-page .cassette-shelf-tape {
-  border: 1px solid #999;
-  border-radius: 0;
+  position: relative;
+  width: 45px; /* 背表紙の幅 */
+  height: 180px; /* 背表紙の高さ */
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 4px;
+  border: 1px solid #333;
+  border-radius: 2px;
   background: #292929;
-  box-shadow: inset 0 2px 0 #777, 0 3px 0 #000;
-  touch-action: none;
+  box-shadow: inset -2px 0 5px rgba(0,0,0,0.5), 2px 2px 5px rgba(0,0,0,0.8);
+  transform-origin: center right; /* 引き出す支点 */
+  transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s;
 }
+
+
 
 .music-page .cassette-shelf-tape[aria-pressed="true"] {
   border-color: #00ff66;
   box-shadow: 3px 3px 0 #00ff66;
+}
+
+/* 中のテキストを縦書き（横向き）に配置 */
+.music-page .cassette-shelf-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  white-space: nowrap;
 }
 
 .music-shelf-index {
@@ -66,11 +87,13 @@
   image-rendering: pixelated;
 }
 
+/* ホバー時に手前に引き出し、少し回転させる（Framer Motion風のスプリング感） */
 .music-page .cassette-shelf-tape:hover,
 .music-page .cassette-shelf-tape:focus-visible {
+  transform: translateZ(40px) translateX(-10px) rotateY(-15deg);
   border-color: #fff;
-  outline: 2px solid #fff;
-  outline-offset: 2px;
+  box-shadow: 10px 10px 15px rgba(0,0,0,0.9), inset 0 0 0 1px rgba(255,255,255,0.2);
+  z-index: 10;
 }
 
 .music-page .cassette-drop-target {
@@ -1183,8 +1206,8 @@
 }
 
 @keyframes music-room-settle {
-  from { transform: translateY(-45px) scale(0.85) rotate(-5deg); }
-  to { transform: translateY(0) scale(1) rotate(0); }
+  from { transform: translateY(-45px) scale(0.85) rotate(-5deg); opacity: 0; } /* もし opacity が入っていたら犯人！ */
+  to { transform: translateY(0) scale(1) rotate(0); opacity: 1; }
 }
 
 @keyframes music-room-reel {
