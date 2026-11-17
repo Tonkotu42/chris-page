@@ -198,6 +198,17 @@ export default function MusicPage() {
   const suppressInspectInsertClickRef = useRef(false);
   const onTrackEndedRef = useRef<() => void>(() => setIsPlaying(false));
   const readyAudioSideRef = useRef<string | null>(null);
+  const mediaSessionHandlersRef = useRef<{
+    togglePlay: () => void;
+    changeCassette: (direction: -1 | 1) => void;
+    seekTo: (seconds: number) => void;
+    isPlaying: boolean;
+  }>({
+    togglePlay: () => {},
+    changeCassette: () => {},
+    seekTo: () => {},
+    isPlaying: false,
+  });
   const [trackAudioPlayer] = useState(() => {
     const player = new SupabaseWorkletAudioPlayer();
     player.onEnded = () => onTrackEndedRef.current();
@@ -225,9 +236,14 @@ export default function MusicPage() {
   const insertionTimerRef = useRef<number | null>(null);
   const deckSpinUpTimerRef = useRef<number | null>(null);
 
+  const isCassetteInSlot = (cassetteId: string) => (
+    activeCassetteId === cassetteId || playlist.some((entry) => entry.cassetteId === cassetteId)
+  );
   const activeCassette = cassettes.find((cassette) => cassette.id === activeCassetteId) ?? null;
   const selectedCassette = cassettes.find((cassette) => cassette.id === selectedCassetteId) ?? null;
-  const pendingCassette = cassettes.find((cassette) => cassette.id === pendingCassetteId) ?? null;
+  const pendingCassette = cassettes.find((cassette) => (
+    cassette.id === pendingCassetteId && !isCassetteInSlot(cassette.id)
+  )) ?? null;
   const currentSide: CassetteSide = activeCassette
     ? (activeSide === 'A' ? activeCassette.sideA : activeCassette.sideB)
     : null;
@@ -267,12 +283,20 @@ export default function MusicPage() {
               ? { ...savedCassette, sideA: cassette.sideA }
               : cassette;
           }),
-          ...savedCassettes.filter((cassette) => !initialCassettes.some((initial) => initial.id === cassette.id)),
+          ...savedCassettes.filter(
+            (cassette) =>
+              cassette.id !== 'stupid-mfs' &&
+              !initialCassettes.some((initial) => initial.id === cassette.id),
+          ),
         ];
         let order: string[] = [];
         try {
           const storedOrder = localStorage.getItem('chris-music-cassette-order');
-          if (storedOrder) order = JSON.parse(storedOrder) as string[];
+          if (storedOrder) {
+            order = (JSON.parse(storedOrder) as string[]).map((id) =>
+              id === 'stupid-mfs' ? 'back-once-again' : id,
+            );
+          }
         } catch {
           setStorageError('Cassette order could not be restored.');
         }
@@ -488,6 +512,7 @@ export default function MusicPage() {
   }, [activeSideId, currentSide?.kind, isAudioReady, soundCloudReady, trackAudioPlayer]);
 
   useEffect(() => {
+    if (autoStartEntry?.cassetteId === activeCassetteId && activeSide === 'A') return;
     if (currentSide?.kind === 'soundcloud' && soundCloudReady) {
       const widget = soundCloudWidgetRef.current;
       if (isPlaying) widget?.play();
@@ -496,7 +521,7 @@ export default function MusicPage() {
     }
     if (currentSide?.kind !== 'audio') return;
     if (isPlaying) {
-      if (!isAudioReady) return;
+      if (!isAudioReady || readyAudioSideRef.current !== activeSideId) return;
       void trackAudioPlayer.play().catch(() => {
         setIsPlaying(false);
         setStorageError('This audio could not be played by the browser.');
@@ -504,7 +529,7 @@ export default function MusicPage() {
     } else if (!isJogging) {
       trackAudioPlayer.pause();
     }
-  }, [currentSide, isAudioReady, isJogging, isPlaying, soundCloudReady, trackAudioPlayer]);
+  }, [activeCassetteId, activeSide, activeSideId, autoStartEntry, currentSide, isAudioReady, isJogging, isPlaying, soundCloudReady, trackAudioPlayer]);
 
   useEffect(() => {
     if (currentSide?.kind !== 'video') return;
@@ -554,6 +579,29 @@ export default function MusicPage() {
   }, [activeSideId, isAudioReady, loopMode, trackAudioPlayer]);
 
   useEffect(() => {
+    const shouldMaintainAudioSession =
+      (isPlaying && currentSide?.kind === 'audio') || Boolean(autoStartEntry);
+    if (shouldMaintainAudioSession) {
+      trackAudioPlayer.activateBackgroundSession();
+    } else {
+      trackAudioPlayer.releaseBackgroundSession();
+    }
+  }, [autoStartEntry, currentSide?.kind, isPlaying, trackAudioPlayer]);
+
+  useEffect(() => {
+    if (!activeCassetteId || !currentSide || !isAudioReady) return;
+    const upcomingEntry = nextQueueEntry(playlist, activeQueueId)
+      ?? (loopMode === 'all' && playlist.length > 0 ? playlist[0] : null);
+    if (!upcomingEntry) return;
+    const upcomingCassette = cassettes.find((item) => item.id === upcomingEntry.cassetteId);
+    const upcomingSide = upcomingCassette?.sideA;
+    if (upcomingSide?.kind !== 'audio') return;
+    const upcomingSource = 'src' in upcomingSide ? upcomingSide.src : upcomingSide.blob;
+    if (upcomingSource === audioSource) return;
+    void trackAudioPlayer.preload(upcomingSource).catch(() => {});
+  }, [activeCassetteId, activeQueueId, audioSource, cassettes, currentSide, isAudioReady, loopMode, playlist, trackAudioPlayer]);
+
+  useEffect(() => {
     if (!isPlaying || isJogging) return;
     let lastTime = performance.now();
     let animationFrame = 0;
@@ -580,7 +628,7 @@ export default function MusicPage() {
     if (progressSaveTimer.current !== null) window.clearTimeout(progressSaveTimer.current);
     if (insertionTimerRef.current !== null) window.clearTimeout(insertionTimerRef.current);
     if (deckSpinUpTimerRef.current !== null) window.clearTimeout(deckSpinUpTimerRef.current);
-    trackAudioPlayer.stop();
+    trackAudioPlayer.dispose();
     insertionSoundPlayer.stop();
     soundCloudWidgetRef.current?.pause();
     buttonClickPlayer.stop();
@@ -638,11 +686,14 @@ export default function MusicPage() {
       setStorageError('This cassette has no track on side A.');
       return;
     }
+    if (isCassetteInSlot(cassette.id)) {
+      setPendingCassetteId(null);
+      return;
+    }
     const entry = { id: crypto.randomUUID(), cassetteId: cassette.id };
     playCassetteInsertSound();
     setPlaylist((current) => [...current, entry]);
     setPendingCassetteId(null);
-    setSnappedTapeId(cassette.id);
     if (!activeCassetteId || (playlist.length === 0 && !isPlaying)) {
       if (currentSide?.kind === 'audio') saveProgress(true);
       setActiveQueueId(entry.id);
@@ -654,7 +705,10 @@ export default function MusicPage() {
     }
   };
 
-  const startQueueEntry = (entry: QueueEntry) => {
+  const startQueueEntry = (
+    entry: QueueEntry,
+    options: { preservePlaying?: boolean; silentInsertSfx?: boolean } = {},
+  ) => {
     const cassette = cassettes.find((item) => item.id === entry.cassetteId);
     if (!cassette?.sideA) {
       setIsPlaying(false);
@@ -663,8 +717,13 @@ export default function MusicPage() {
       return;
     }
     if (currentSide?.kind === 'audio' && isPlaying) saveProgress(true);
-    playCassetteInsertSound();
-    setIsPlaying(false);
+    if (cassette.sideA.kind === 'audio') {
+      trackAudioPlayer.activateBackgroundSession();
+    }
+    if (!options.silentInsertSfx) playCassetteInsertSound();
+    readyAudioSideRef.current = null;
+    setIsAudioReady(false);
+    if (!options.preservePlaying) setIsPlaying(false);
     setIsFastForwarding(false);
     setActiveQueueId(entry.id);
     setActiveCassetteId(entry.cassetteId);
@@ -699,34 +758,38 @@ export default function MusicPage() {
       return;
     }
 
-    setIsPlaying(false);
     const next = nextQueueEntry(playlist, activeQueueId);
     if (next) {
-      startQueueEntry(next);
+      startQueueEntry(next, { preservePlaying: true, silentInsertSfx: true });
       return;
     }
     if (loopMode === 'all') {
       if (playlist.length > 0) {
-        startQueueEntry(playlist[0]);
+        startQueueEntry(playlist[0], { preservePlaying: true, silentInsertSfx: true });
+        return;
       } else if (activeCassette && currentSide) {
         if (currentSide.kind === 'audio' && trackAudioPlayer.isReady) {
           void trackAudioPlayer.seek(0).then(() => trackAudioPlayer.play()).then(() => {
             setPlaybackTime(0);
             setIsPlaying(true);
           }).catch(() => setIsPlaying(false));
+          return;
         } else if (currentSide.kind === 'soundcloud') {
           soundCloudWidgetRef.current?.seekTo(0);
           soundCloudWidgetRef.current?.play();
           setPlaybackTime(0);
           setIsPlaying(true);
+          return;
         } else if (currentSide.kind === 'video') {
           sendVideoCommand('seekTo', [0, true]);
           sendVideoCommand('playVideo');
           setPlaybackTime(0);
           setIsPlaying(true);
+          return;
         }
       }
     }
+    setIsPlaying(false);
   };
 
   useEffect(() => {
@@ -827,11 +890,16 @@ export default function MusicPage() {
       clearDeckInsertSpin();
     }
     setPlaylist((current) => current.filter((item) => item.id !== entry.id));
+    setSnappedTapeId(entry.cassetteId);
   };
 
   const replaceQueueEntry = (entry: QueueEntry, cassette: Cassette) => {
     if (!cassette.sideA) {
       setStorageError('This cassette has no track on side A.');
+      return;
+    }
+    if (isCassetteInSlot(cassette.id)) {
+      setPendingCassetteId(null);
       return;
     }
     const replacement = { id: crypto.randomUUID(), cassetteId: cassette.id };
@@ -851,7 +919,7 @@ export default function MusicPage() {
     }
     setPlaylist((current) => current.map((item) => item.id === entry.id ? replacement : item));
     setPendingCassetteId(null);
-    setSnappedTapeId(cassette.id);
+    setSnappedTapeId(entry.cassetteId);
     playCassetteInsertSound();
   };
 
@@ -956,7 +1024,7 @@ export default function MusicPage() {
     const queueTarget = hoveredElement?.closest<HTMLElement>('[data-queue-slot]');
     setQueueDropTargetId(queueTarget?.dataset.queueSlot ?? null);
     setSlotDropHighlight(Boolean(hoveredElement?.closest('[data-cassette-slot]')));
-    const hoveredCassette = hoveredElement?.closest<HTMLButtonElement>('[data-cassette-id]');
+    const hoveredCassette = hoveredElement?.closest<HTMLElement>('[data-cassette-id]');
     setDropTargetId(hoveredCassette?.dataset.cassetteId ?? null);
   };
 
@@ -978,7 +1046,7 @@ export default function MusicPage() {
     }, 0);
 
     const dropElement = document.elementFromPoint(event.clientX, event.clientY);
-    const targetCassetteId = dropElement?.closest<HTMLButtonElement>('[data-cassette-id]')?.dataset.cassetteId;
+    const targetCassetteId = dropElement?.closest<HTMLElement>('[data-cassette-id]')?.dataset.cassetteId;
 
     const targetCassette = cassettes.find((cassette) => cassette.id === targetCassetteId);
     const sourceCassette = cassettes.find((cassette) => cassette.id === drag.cassetteId);
@@ -1093,6 +1161,7 @@ export default function MusicPage() {
     if (currentSide.kind === 'audio') {
       if (shouldPlay) {
         if (!isAudioReady) return;
+        trackAudioPlayer.activateBackgroundSession();
         void trackAudioPlayer.play().catch(() => {
           setIsPlaying(false);
           setStorageError('This audio could not be played by the browser.');
@@ -1117,6 +1186,9 @@ export default function MusicPage() {
   //   });
   // }, [isPlaying]);
 
+  const hasActiveMedia = Boolean(activeCassette && currentSide);
+  const canSwitchQueuedTracks = playlist.length > 1;
+
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
     const session = navigator.mediaSession;
@@ -1134,7 +1206,29 @@ export default function MusicPage() {
         artwork: [{ src: new URL('/music-artwork.png', window.location.origin).href, sizes: '512x512', type: 'image/png' }],
       });
     }
-    session.playbackState = isPlaying ? 'playing' : 'paused';
+    session.playbackState = (isPlaying || Boolean(autoStartEntry)) ? 'playing' : 'paused';
+  }, [activeCassette, autoStartEntry, currentSide, currentSideTitle, isPlaying]);
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+    const session = navigator.mediaSession;
+    if (currentSide?.kind !== 'audio' || playbackDuration <= 0 || !('setPositionState' in session)) {
+      return;
+    }
+    try {
+      session.setPositionState({
+        duration: playbackDuration,
+        playbackRate: isFastForwarding && !isJogging ? 4 : 1,
+        position: Math.max(0, Math.min(playbackTime, playbackDuration)),
+      });
+    } catch {
+      // Ignore transient position state mismatches while switching tracks.
+    }
+  }, [currentSide?.kind, isFastForwarding, isJogging, playbackDuration, playbackTime]);
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+    const session = navigator.mediaSession;
     const setHandler = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
       try {
         session.setActionHandler(action, handler);
@@ -1142,16 +1236,48 @@ export default function MusicPage() {
         console.warn(`Media Session ${action} action is unavailable:`, error);
       }
     };
-    setHandler('play', () => { if (!isPlaying) togglePlay(); });
-    setHandler('pause', () => { if (isPlaying) togglePlay(); });
+
+    if (!hasActiveMedia) {
+      setHandler('play', null);
+      setHandler('pause', null);
+      setHandler('nexttrack', null);
+      setHandler('previoustrack', null);
+      setHandler('seekto', null);
+      return;
+    }
+
+    setHandler('play', () => {
+      if (!mediaSessionHandlersRef.current.isPlaying) mediaSessionHandlersRef.current.togglePlay();
+    });
+    setHandler('pause', () => {
+      if (mediaSessionHandlersRef.current.isPlaying) mediaSessionHandlersRef.current.togglePlay();
+    });
+    setHandler('nexttrack', canSwitchQueuedTracks ? () => {
+      mediaSessionHandlersRef.current.changeCassette(1);
+    } : null);
+    setHandler('previoustrack', canSwitchQueuedTracks ? () => {
+      mediaSessionHandlersRef.current.changeCassette(-1);
+    } : null);
+    setHandler('seekto', (details) => {
+      if (typeof details.seekTime === 'number') {
+        mediaSessionHandlersRef.current.seekTo(details.seekTime);
+      }
+    });
 
     return () => {
       setHandler('play', null);
       setHandler('pause', null);
-      session.metadata = null;
-      session.playbackState = 'none';
+      setHandler('nexttrack', null);
+      setHandler('previoustrack', null);
+      setHandler('seekto', null);
     };
-  }, [activeCassette, currentSide, currentSideTitle, isAudioReady, isPlaying, soundCloudReady]);
+  }, [canSwitchQueuedTracks, hasActiveMedia]);
+
+  useEffect(() => () => {
+    if (!('mediaSession' in navigator)) return;
+    navigator.mediaSession.metadata = null;
+    navigator.mediaSession.playbackState = 'none';
+  }, []);
 
 const changeCassette = (direction: -1 | 1) => {
     if (playlist.length === 0) return;
@@ -1165,7 +1291,7 @@ const changeCassette = (direction: -1 | 1) => {
     const nextEntry = playlist[(baseIndex + direction + playlist.length) % playlist.length];
 
     if (isPlaying) {
-      startQueueEntry(nextEntry);
+      startQueueEntry(nextEntry, { preservePlaying: true });
       return;
     }
 
@@ -1177,6 +1303,27 @@ const changeCassette = (direction: -1 | 1) => {
     setIsPlaying(false);
     setTableInsertPulse((pulse) => pulse + 1);
     triggerDeckInsertSpin();
+  };
+
+  mediaSessionHandlersRef.current = {
+    togglePlay,
+    changeCassette,
+    isPlaying,
+    seekTo: (seconds: number) => {
+      if (!Number.isFinite(seconds)) return;
+      if (currentSide?.kind === 'audio' && trackAudioPlayer.isReady && trackAudioPlayer.duration > 0) {
+        const clamped = Math.max(0, Math.min(seconds, trackAudioPlayer.duration));
+        void trackAudioPlayer.seek(clamped).catch(() => {});
+        setPlaybackTime(clamped);
+        saveProgress(true);
+      } else if (currentSide?.kind === 'soundcloud' && soundCloudReady) {
+        soundCloudWidgetRef.current?.seekTo(Math.max(0, seconds * 1000));
+        setPlaybackTime(Math.max(0, seconds));
+      } else if (currentSide?.kind === 'video') {
+        sendVideoCommand('seekTo', [Math.max(0, seconds), true]);
+        setPlaybackTime(Math.max(0, seconds));
+      }
+    },
   };
 
   const ejectActiveCassette = () => {
@@ -1204,6 +1351,7 @@ const changeCassette = (direction: -1 | 1) => {
     soundCloudWidgetRef.current?.seekTo(0);
     playCassetteInsertSound();
     setPlaybackTime(0);
+    setSnappedTapeId(activeCassette.id);
     setActiveCassetteId(null);
     setIsPlaying(false);
     setIsFastForwarding(false);
@@ -1539,51 +1687,72 @@ const changeCassette = (direction: -1 | 1) => {
             </div>
           </div>
           <div className="cassette-shelf-grid">
-            {cassettes.map((cassette, index) => (
-              <button
-                key={cassette.id}
-                type="button"
-                aria-label={`Select ${cassette.title} cassette`}
-                aria-pressed={pendingCassetteId === cassette.id}
-                data-cassette-id={cassette.id}
-                onPointerDown={(event) => handleShelfCassettePointerDown(event, cassette)}
-                onPointerMove={handleShelfCassettePointerMove}
-                onPointerUp={handleShelfCassettePointerUp}
-                onPointerCancel={handleShelfCassettePointerCancel}
-                onAnimationEnd={() => {
-                  if (snappedTapeId === cassette.id) setSnappedTapeId(null);
-                }}
-                onDoubleClick={() => enqueueCassette(cassette)}
-                onClick={() => {
-                  if (suppressNextCassetteClickRef.current) return;
-                  setPendingCassetteId((current) => current === cassette.id ? null : cassette.id);
-                  setDragOffset(0);
-                }}
-              className={`cassette-shelf-tape group ${
-              dropTargetId === cassette.id ? 'cassette-drop-target' : ''
-              } ${
-              snappedTapeId === cassette.id ? 'cassette-snap-in' : ''
-              } ${draggedTapeId === cassette.id ? 'cassette-being-dragged' : ''} ${
-              activeCassetteId === cassette.id ? 'is-loaded-on-shelf' : ''
-              }`}
-              >
-                <span className={`cassette-shelf-tape-body bg-gradient-to-br ${cassette.color}`}>
-                  <span className="cassette-shelf-tape-seam" />
-                  <span className="music-shelf-index">{String(index + 1).padStart(2, '0')}</span>
-                  <img className="music-shelf-art" src="/music-artwork.png" alt="" />
-                  <span className="cassette-shelf-label min-w-0 flex-1">
-                    <span className="block truncate text-[9px] uppercase tracking-[0.12em] text-white">{cassette.title}</span>
-                    <span className="mt-1 block truncate text-[7px] uppercase tracking-[0.18em] text-white/50">
-                      CHRIS · {knownDurations[sideKey(cassette.id, 'A')] === undefined ? '--:--' : formattedPlaybackTime(knownDurations[sideKey(cassette.id, 'A')])}
+            {cassettes.map((cassette, index) => {
+              const isEmptySlot = isCassetteInSlot(cassette.id);
+              if (isEmptySlot) {
+                return (
+                  <div
+                    key={cassette.id}
+                    data-cassette-id={cassette.id}
+                    aria-label={`${cassette.title} slot is empty (in tape slot)`}
+                    className={`cassette-shelf-tape is-empty-slot ${
+                      dropTargetId === cassette.id ? 'cassette-drop-target' : ''
+                    }`}
+                  >
+                    <span className="cassette-shelf-empty-body">
+                      <span className="music-shelf-index">{String(index + 1).padStart(2, '0')}</span>
+                      <span className="cassette-shelf-empty-well" aria-hidden="true">
+                        <span className="cassette-shelf-empty-text">EMPTY</span>
+                      </span>
+                      <span aria-hidden="true" className="cassette-shelf-empty-rail" />
+                    </span>
+                  </div>
+                );
+              }
+              return (
+                <button
+                  key={cassette.id}
+                  type="button"
+                  aria-label={`Select ${cassette.title} cassette`}
+                  aria-pressed={pendingCassetteId === cassette.id}
+                  data-cassette-id={cassette.id}
+                  onPointerDown={(event) => handleShelfCassettePointerDown(event, cassette)}
+                  onPointerMove={handleShelfCassettePointerMove}
+                  onPointerUp={handleShelfCassettePointerUp}
+                  onPointerCancel={handleShelfCassettePointerCancel}
+                  onAnimationEnd={() => {
+                    if (snappedTapeId === cassette.id) setSnappedTapeId(null);
+                  }}
+                  onDoubleClick={() => enqueueCassette(cassette)}
+                  onClick={() => {
+                    if (suppressNextCassetteClickRef.current) return;
+                    setPendingCassetteId((current) => current === cassette.id ? null : cassette.id);
+                    setDragOffset(0);
+                  }}
+                  className={`cassette-shelf-tape group ${
+                    dropTargetId === cassette.id ? 'cassette-drop-target' : ''
+                  } ${
+                    snappedTapeId === cassette.id ? 'cassette-snap-in' : ''
+                  } ${draggedTapeId === cassette.id ? 'cassette-being-dragged' : ''}`}
+                >
+                  <span className={`cassette-shelf-tape-body bg-gradient-to-br ${cassette.color}`}>
+                    <span className="cassette-shelf-tape-seam" />
+                    <span className="music-shelf-index">{String(index + 1).padStart(2, '0')}</span>
+                    <img className="music-shelf-art" src="/music-artwork.png" alt="" />
+                    <span className="cassette-shelf-label min-w-0 flex-1">
+                      <span className="block truncate text-[9px] uppercase tracking-[0.12em] text-white">{cassette.title}</span>
+                      <span className="mt-1 block truncate text-[7px] uppercase tracking-[0.18em] text-white/50">
+                        CHRIS · {knownDurations[sideKey(cassette.id, 'A')] === undefined ? '--:--' : formattedPlaybackTime(knownDurations[sideKey(cassette.id, 'A')])}
+                      </span>
+                    </span>
+                    <span aria-hidden="true" className="music-shelf-type flex shrink-0 flex-col gap-1 text-[6px] text-white/40">
+                      <span>90</span>
+                      <span>TYPE I</span>
                     </span>
                   </span>
-                  <span aria-hidden="true" className="music-shelf-type flex shrink-0 flex-col gap-1 text-[6px] text-white/40">
-                    <span>90</span>
-                    <span>TYPE I</span>
-                  </span>
-                </span>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         </section>
 

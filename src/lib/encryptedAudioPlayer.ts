@@ -69,10 +69,43 @@ function decryptAudio(audioData: ArrayBuffer, key: string) {
   return decryptedBytes.buffer;
 }
 
+function createSilentWavUrl() {
+  const sampleRate = 8000;
+  const sampleCount = sampleRate; // 1 second of PCM digital silence
+  const dataByteLength = sampleCount * 2;
+  const buffer = new ArrayBuffer(44 + dataByteLength);
+  const view = new DataView(buffer);
+  const writeAscii = (offset: number, value: string) => {
+    for (let index = 0; index < value.length; index += 1) {
+      view.setUint8(offset + index, value.charCodeAt(index));
+    }
+  };
+
+  writeAscii(0, 'RIFF');
+  view.setUint32(4, 36 + dataByteLength, true);
+  writeAscii(8, 'WAVE');
+  writeAscii(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeAscii(36, 'data');
+  view.setUint32(40, dataByteLength, true);
+
+  return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
+}
+
+const maxCachedBuffers = 2;
+
 export class SupabaseWorkletAudioPlayer {
   private context: AudioContext | null = null;
+  private contextListenerAttached = false;
   private workletModule: Promise<void> | null = null;
   private buffer: AudioBuffer | null = null;
+  private currentSourceKey: string | null = null;
   private node: AudioWorkletNode | null = null;
   private nodeConnected = false;
   private gainNode: GainNode | null = null;
@@ -84,8 +117,14 @@ export class SupabaseWorkletAudioPlayer {
   private volume = 1;
   private playing = false;
   private loop = false;
+  private keepAliveDesired = false;
+  private keepAliveAudio: HTMLAudioElement | null = null;
+  private keepAliveUrl: string | null = null;
+  private preloadedBuffers = new Map<string, AudioBuffer>();
+  private preloadPromises = new Map<string, Promise<AudioBuffer>>();
+  private blobPreloads = new WeakMap<Blob, AudioBuffer>();
+  private visibilityListenerAttached = false;
   public analyser: AnalyserNode | null = null;
-
 
   onEnded: (() => void) | null = null;
 
@@ -109,47 +148,159 @@ export class SupabaseWorkletAudioPlayer {
     return Math.min(this.buffer.duration, raw);
   }
 
+  private handleVisibilityOrStateRecovery = () => {
+    if ((!this.playing && !this.keepAliveDesired) || !this.context) return;
+    if (this.context.state !== 'running' && this.context.state !== 'closed') {
+      void this.context.resume().catch(() => {});
+    }
+    if (this.keepAliveDesired && this.keepAliveAudio?.paused) {
+      void this.keepAliveAudio.play().catch(() => {});
+    }
+  };
+
+  private ensureVisibilityListener() {
+    if (this.visibilityListenerAttached || typeof document === 'undefined' || typeof document.addEventListener !== 'function') {
+      return;
+    }
+    document.addEventListener('visibilitychange', this.handleVisibilityOrStateRecovery);
+    this.visibilityListenerAttached = true;
+  }
+
+  activateBackgroundSession() {
+    this.keepAliveDesired = true;
+    this.ensureVisibilityListener();
+    if (typeof Audio === 'undefined' || typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') {
+      return;
+    }
+    if (!this.keepAliveAudio) {
+      this.keepAliveUrl = createSilentWavUrl();
+      const audio = new Audio(this.keepAliveUrl);
+      audio.loop = true;
+      audio.preload = 'auto';
+      audio.volume = 1;
+      audio.setAttribute('playsinline', '');
+      this.keepAliveAudio = audio;
+    }
+    if (this.keepAliveAudio.paused) {
+      void this.keepAliveAudio.play().catch(() => {});
+    }
+  }
+
+  releaseBackgroundSession() {
+    this.keepAliveDesired = false;
+    if (this.keepAliveAudio && !this.keepAliveAudio.paused) {
+      this.keepAliveAudio.pause();
+      try {
+        this.keepAliveAudio.currentTime = 0;
+      } catch {
+        // Ignore seek errors on uninitialized media elements.
+      }
+    }
+  }
+
+  private cacheDecodedBuffer(source: AudioSource, buffer: AudioBuffer) {
+    if (typeof source !== 'string') {
+      this.blobPreloads.set(source, buffer);
+      return;
+    }
+    if (this.preloadedBuffers.has(source)) {
+      this.preloadedBuffers.delete(source);
+    }
+    this.preloadedBuffers.set(source, buffer);
+    while (this.preloadedBuffers.size > maxCachedBuffers) {
+      const oldestKey = this.preloadedBuffers.keys().next().value;
+      if (oldestKey === undefined) break;
+      if (oldestKey === this.currentSourceKey && this.preloadedBuffers.size > 1) {
+        const entry = this.preloadedBuffers.get(oldestKey);
+        this.preloadedBuffers.delete(oldestKey);
+        if (entry) this.preloadedBuffers.set(oldestKey, entry);
+        continue;
+      }
+      this.preloadedBuffers.delete(oldestKey);
+    }
+  }
+
+  private async fetchAndDecode(source: AudioSource, context: AudioContext, signal?: AbortSignal): Promise<AudioBuffer> {
+    const abortSignal = signal ?? new AbortController().signal;
+    let audioData: ArrayBuffer;
+    if (typeof source === 'string') {
+      if (isEncryptedStoragePath(source)) {
+        const download = getSupabaseClient()
+          .storage
+          .from(audioBucket)
+          .download(source);
+        const { data, error } = await waitForOperation(
+          download,
+          abortSignal,
+          downloadTimeoutMs,
+          'Audio download timed out. Check your connection and Supabase settings, then retry.',
+        );
+        if (error) throw new Error(`Could not download encrypted audio: ${error.message}`);
+        if (!data) throw new Error('Supabase returned no audio data.');
+        audioData = await data.arrayBuffer();
+        audioData = decryptAudio(audioData, getXorKey());
+      } else {
+        const response = await fetch(source, {
+          credentials: 'same-origin',
+          signal: abortSignal,
+        });
+        if (!response.ok) throw new Error(`Audio request failed with status ${response.status}.`);
+        audioData = await response.arrayBuffer();
+      }
+    } else {
+      audioData = await source.arrayBuffer();
+    }
+
+    return waitForOperation(
+      context.decodeAudioData(audioData),
+      abortSignal,
+      processingTimeoutMs,
+      'Audio decoding timed out. Please retry.',
+    );
+  }
+
+  async preload(source: AudioSource): Promise<AudioBuffer> {
+    if (typeof source === 'string') {
+      const cached = this.preloadedBuffers.get(source);
+      if (cached) return cached;
+      const pending = this.preloadPromises.get(source);
+      if (pending) return pending;
+    } else {
+      const cachedBlob = this.blobPreloads.get(source);
+      if (cachedBlob) return cachedBlob;
+    }
+
+    const context = this.getContext();
+    const task = this.fetchAndDecode(source, context).then((buffer) => {
+      this.cacheDecodedBuffer(source, buffer);
+      return buffer;
+    });
+
+    if (typeof source === 'string') {
+      this.preloadPromises.set(source, task);
+      void task.finally(() => {
+        if (this.preloadPromises.get(source) === task) {
+          this.preloadPromises.delete(source);
+        }
+      });
+    }
+
+    return task;
+  }
+
   async load(source: AudioSource): Promise<AudioBuffer> {
     this.loadController?.abort();
     this.releaseNode();
     this.buffer = null;
     this.position = 0;
     this.playing = false;
+    this.currentSourceKey = typeof source === 'string' ? source : null;
 
     const generation = ++this.loadGeneration;
     const controller = new AbortController();
     this.loadController = controller;
 
     try {
-      let audioData: ArrayBuffer;
-      if (typeof source === 'string') {
-        if (isEncryptedStoragePath(source)) {
-          const download = getSupabaseClient()
-            .storage
-            .from(audioBucket)
-            .download(source);
-          const { data, error } = await waitForOperation(
-            download,
-            controller.signal,
-            downloadTimeoutMs,
-            'Audio download timed out. Check your connection and Supabase settings, then retry.',
-          );
-          if (error) throw new Error(`Could not download encrypted audio: ${error.message}`);
-          if (!data) throw new Error('Supabase returned no audio data.');
-          audioData = await data.arrayBuffer();
-          audioData = decryptAudio(audioData, getXorKey());
-        } else {
-          const response = await fetch(source, {
-            credentials: 'same-origin',
-            signal: controller.signal,
-          });
-          if (!response.ok) throw new Error(`Audio request failed with status ${response.status}.`);
-          audioData = await response.arrayBuffer();
-        }
-      } else {
-        audioData = await source.arrayBuffer();
-      }
-
       const context = this.getContext();
       const workletModule = this.workletModule;
       if (!workletModule) throw new Error('The audio worklet could not be initialized.');
@@ -162,6 +313,33 @@ export class SupabaseWorkletAudioPlayer {
         workletTimeoutMs,
         'Loading the audio processor timed out. Please retry.',
       );
+      if (generation !== this.loadGeneration) {
+        throw new DOMException('Audio loading was cancelled.', 'AbortError');
+      }
+
+      let buffer: AudioBuffer | undefined;
+      if (typeof source === 'string') {
+        buffer = this.preloadedBuffers.get(source);
+        if (!buffer) {
+          const inflightPreload = this.preloadPromises.get(source);
+          if (inflightPreload) {
+            buffer = await waitForOperation(
+              inflightPreload,
+              controller.signal,
+              downloadTimeoutMs + processingTimeoutMs,
+              'Audio preloading timed out. Please retry.',
+            ).catch(() => undefined);
+          }
+        }
+      } else {
+        buffer = this.blobPreloads.get(source);
+      }
+
+      if (!buffer) {
+        buffer = await this.fetchAndDecode(source, context, controller.signal);
+        this.cacheDecodedBuffer(source, buffer);
+      }
+
       if (generation !== this.loadGeneration) {
         throw new DOMException('Audio loading was cancelled.', 'AbortError');
       }
@@ -184,17 +362,6 @@ export class SupabaseWorkletAudioPlayer {
       this.analyser = analyser;
       this.node = node;
       this.gainNode = gainNode;
-
-      const buffer = await waitForOperation(
-        context.decodeAudioData(audioData),
-        controller.signal,
-        processingTimeoutMs,
-        'Audio decoding timed out. Please retry.',
-      );
-
-      if (generation !== this.loadGeneration) {
-        throw new DOMException('Audio loading was cancelled.', 'AbortError');
-      }
 
       this.buffer = buffer;
       node.port.onmessage = ({ data }: MessageEvent<WorkletMessage>) => {
@@ -241,6 +408,7 @@ export class SupabaseWorkletAudioPlayer {
     }
 
     if (typeof options.loop === 'boolean') this.loop = options.loop;
+    this.activateBackgroundSession();
     const context = this.getContext();
     this.connectNode();
     this.positionUpdatedAt = context.currentTime;
@@ -250,7 +418,7 @@ export class SupabaseWorkletAudioPlayer {
     this.playing = true;
 
     try {
-      if (context.state === 'suspended') await context.resume();
+      if (context.state !== 'running') await context.resume();
     } catch (error) {
       this.pause();
       throw error;
@@ -274,7 +442,7 @@ export class SupabaseWorkletAudioPlayer {
     if (!this.buffer || !this.node) throw new Error('Audio has not finished loading.');
     const context = this.getContext();
     this.connectNode();
-    if (context.state === 'suspended') await context.resume();
+    if (context.state !== 'running') await context.resume();
   }
 
   scratch(fromSeconds: number, toSeconds: number, duration: number) {
@@ -313,6 +481,30 @@ export class SupabaseWorkletAudioPlayer {
     this.disconnectNode();
   }
 
+  dispose() {
+    this.stop();
+    this.releaseNode();
+    this.releaseBackgroundSession();
+    if (this.visibilityListenerAttached && typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
+      document.removeEventListener('visibilitychange', this.handleVisibilityOrStateRecovery);
+      this.visibilityListenerAttached = false;
+    }
+    if (this.context && this.contextListenerAttached && typeof this.context.removeEventListener === 'function') {
+      this.context.removeEventListener('statechange', this.handleVisibilityOrStateRecovery);
+      this.contextListenerAttached = false;
+    }
+    if (this.keepAliveAudio) {
+      this.keepAliveAudio.src = '';
+      this.keepAliveAudio = null;
+    }
+    if (this.keepAliveUrl && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+      URL.revokeObjectURL(this.keepAliveUrl);
+      this.keepAliveUrl = null;
+    }
+    this.preloadedBuffers.clear();
+    this.preloadPromises.clear();
+  }
+
   seek(seconds: number) {
     if (!this.buffer || !Number.isFinite(seconds)) return Promise.resolve();
     this.position = Math.max(0, Math.min(seconds, this.buffer.duration));
@@ -348,7 +540,14 @@ export class SupabaseWorkletAudioPlayer {
   }
 
   private getContext() {
-    if (!this.context || this.context.state === 'closed') this.context = new AudioContext();
+    if (!this.context || this.context.state === 'closed') {
+      this.context = new AudioContext();
+      this.contextListenerAttached = false;
+    }
+    if (!this.contextListenerAttached && typeof this.context.addEventListener === 'function') {
+      this.context.addEventListener('statechange', this.handleVisibilityOrStateRecovery);
+      this.contextListenerAttached = true;
+    }
     if (!this.workletModule) {
       if (!this.context.audioWorklet) {
         throw new Error(window.isSecureContext

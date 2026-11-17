@@ -158,6 +158,60 @@
   box-shadow: 0 0 0 2px #fff;
 }
 
+.music-page .cassette-shelf-tape.is-empty-slot {
+  cursor: default;
+}
+
+.music-page .cassette-shelf-empty-body {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 4px;
+  border: 1px dashed #343740;
+  border-radius: 2px;
+  background:
+    repeating-linear-gradient(180deg, #07080a 0 4px, #0b0c10 4px 8px);
+  box-shadow: inset 0 4px 12px rgb(0 0 0 / 85%);
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.music-page .cassette-shelf-tape.is-empty-slot .music-shelf-index {
+  color: #4f5460;
+}
+
+.music-page .cassette-shelf-empty-well {
+  display: flex;
+  flex: 1;
+  width: 100%;
+  margin: 8px 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px dotted #2a2d35;
+  background: rgb(0 0 0 / 45%);
+}
+
+.music-page .cassette-shelf-empty-text {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  color: #494e59;
+  font: 7px "Silkscreen", "DotGothic16", monospace;
+  letter-spacing: 0.22em;
+}
+
+.music-page .cassette-shelf-empty-rail {
+  width: 18px;
+  height: 3px;
+  background: #23262e;
+}
+
+.music-page .cassette-shelf-tape.is-empty-slot.cassette-drop-target .cassette-shelf-empty-body {
+  border-color: #00ff66;
+  box-shadow: inset 0 4px 12px rgb(0 0 0 / 85%), 0 0 0 1px #00ff66;
+}
+
 .music-room-display {
   position: relative;
   display: grid;
