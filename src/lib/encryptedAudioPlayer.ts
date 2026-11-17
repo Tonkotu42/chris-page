@@ -83,6 +83,7 @@ export class SupabaseWorkletAudioPlayer {
   private playbackRate = 1;
   private volume = 1;
   private playing = false;
+  private loop = false;
   public analyser: AnalyserNode | null = null;
 
 
@@ -103,7 +104,9 @@ export class SupabaseWorkletAudioPlayer {
   get currentTime() {
     if (!this.buffer || !this.playing || !this.context) return this.position;
     const elapsed = Math.max(0, this.context.currentTime - this.positionUpdatedAt);
-    return Math.min(this.buffer.duration, this.position + elapsed * this.playbackRate);
+    const raw = this.position + elapsed * this.playbackRate;
+    if (this.loop && this.buffer.duration > 0) return raw % this.buffer.duration;
+    return Math.min(this.buffer.duration, raw);
   }
 
   async load(source: AudioSource): Promise<AudioBuffer> {
@@ -177,8 +180,7 @@ export class SupabaseWorkletAudioPlayer {
       const analyser = context.createAnalyser();
       analyser.fftSize = 2048;
       analyser.smoothingTimeConstant = 0.8;
-      node.connect(analyser);
-      analyser.connect(gainNode); 
+      analyser.connect(gainNode);
       this.analyser = analyser;
       this.node = node;
       this.gainNode = gainNode;
@@ -238,11 +240,12 @@ export class SupabaseWorkletAudioPlayer {
       this.node.port.postMessage({ type: 'seek', frame: 0 });
     }
 
+    if (typeof options.loop === 'boolean') this.loop = options.loop;
     const context = this.getContext();
     this.connectNode();
     this.positionUpdatedAt = context.currentTime;
     this.node.port.postMessage({ type: 'rate', value: this.playbackRate });
-    this.node.port.postMessage({ type: 'loop', enabled: options.loop ?? false });
+    this.node.port.postMessage({ type: 'loop', enabled: this.loop });
     this.node.port.postMessage({ type: 'play' });
     this.playing = true;
 
@@ -327,6 +330,11 @@ export class SupabaseWorkletAudioPlayer {
     this.gainNode.gain.setTargetAtTime(this.volume, this.context.currentTime, 0.015);
   }
 
+  setLoop(enabled: boolean) {
+    this.loop = enabled;
+    this.node?.port.postMessage({ type: 'loop', enabled });
+  }
+
   setPlaybackRate(playbackRate: number) {
     if (!Number.isFinite(playbackRate) || playbackRate <= 0) return;
     this.position = this.currentTime;
@@ -355,14 +363,16 @@ export class SupabaseWorkletAudioPlayer {
   private releaseNode() {
     this.node?.port.close();
     this.disconnectNode();
+    this.analyser?.disconnect();
     this.gainNode?.disconnect();
     this.node = null;
+    this.analyser = null;
     this.gainNode = null;
   }
 
   private connectNode() {
     if (!this.node || !this.gainNode || this.nodeConnected) return;
-    this.node.connect(this.gainNode);
+    this.node.connect(this.analyser ?? this.gainNode);
     this.nodeConnected = true;
   }
 

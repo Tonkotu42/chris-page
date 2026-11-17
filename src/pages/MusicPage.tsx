@@ -9,6 +9,8 @@ import {
   LockKeyhole,
   Pause,
   Play,
+  Repeat,
+  Repeat1,
   Rewind,
   SkipBack,
   SkipForward,
@@ -34,6 +36,7 @@ import { initialCassettes } from '../lib/musicCatalog';
 import './MusicPage.css';
 import { AnalogVU } from '../components/AnalogVU';
 import { RackGEQ } from '../components/RackGEQ';
+import { ListeningRoomDiorama } from '../components/ListeningRoomDiorama';
 
 interface SoundCloudWidgetEvent {
   currentPosition?: number;
@@ -102,6 +105,7 @@ const loadSoundCloudWidgetApi = () => {
 };
 
 type SideName = 'A' | 'B';
+type LoopMode = 'off' | 'all' | 'one';
 
 const tapeColors = [
   'from-[#9aa8a6] via-[#354342] to-[#090a10]',
@@ -165,7 +169,13 @@ export default function MusicPage() {
   const [dragOffset, setDragOffset] = useState(0);
   const [inspectRotation, setInspectRotation] = useState({ x: -12, y: -20 });
   const [isFastForwarding, setIsFastForwarding] = useState(false);
+  const [isRewinding, setIsRewinding] = useState(false);
   const [isFlipping, setIsFlipping] = useState(false);
+  const [isInspectDragging, setIsInspectDragging] = useState(false);
+  const [slotDropHighlight, setSlotDropHighlight] = useState(false);
+  const [tableInsertPulse, setTableInsertPulse] = useState(0);
+  const [deckInsertPulse, setDeckInsertPulse] = useState(0);
+  const [isDeckSpinningUp, setIsDeckSpinningUp] = useState(false);
   const [editingSide, setEditingSide] = useState<SideName | null>(null);
   const [editedTitle, setEditedTitle] = useState('');
   const [storageError, setStorageError] = useState<string | null>(null);
@@ -180,6 +190,7 @@ export default function MusicPage() {
   const [playbackDuration, setPlaybackDuration] = useState(0);
   const [isJogging, setIsJogging] = useState(false);
   const [volume, setVolume] = useState(1);
+  const [loopMode, setLoopMode] = useState<LoopMode>('off');
   const [soundCloudReady, setSoundCloudReady] = useState(false);
   const pointerStartY = useRef<number | null>(null);
   const inspectDragRef = useRef<CassetteInspectDrag | null>(null);
@@ -212,6 +223,7 @@ export default function MusicPage() {
   const queuePointerDragRef = useRef<QueuePointerDrag | null>(null);
   const suppressNextCassetteClickRef = useRef(false);
   const insertionTimerRef = useRef<number | null>(null);
+  const deckSpinUpTimerRef = useRef<number | null>(null);
 
   const activeCassette = cassettes.find((cassette) => cassette.id === activeCassetteId) ?? null;
   const selectedCassette = cassettes.find((cassette) => cassette.id === selectedCassetteId) ?? null;
@@ -538,6 +550,10 @@ export default function MusicPage() {
   }, [isFastForwarding, isJogging, trackAudioPlayer]);
 
   useEffect(() => {
+    trackAudioPlayer.setLoop(loopMode === 'one');
+  }, [activeSideId, isAudioReady, loopMode, trackAudioPlayer]);
+
+  useEffect(() => {
     if (!isPlaying || isJogging) return;
     let lastTime = performance.now();
     let animationFrame = 0;
@@ -563,11 +579,30 @@ export default function MusicPage() {
     if (rewindTimer.current !== null) window.clearInterval(rewindTimer.current);
     if (progressSaveTimer.current !== null) window.clearTimeout(progressSaveTimer.current);
     if (insertionTimerRef.current !== null) window.clearTimeout(insertionTimerRef.current);
+    if (deckSpinUpTimerRef.current !== null) window.clearTimeout(deckSpinUpTimerRef.current);
     trackAudioPlayer.stop();
     insertionSoundPlayer.stop();
     soundCloudWidgetRef.current?.pause();
     buttonClickPlayer.stop();
   }, [buttonClickPlayer, insertionSoundPlayer, trackAudioPlayer]);
+
+  const triggerDeckInsertSpin = (durationMs = 1450) => {
+    setDeckInsertPulse((pulse) => pulse + 1);
+    setIsDeckSpinningUp(true);
+    if (deckSpinUpTimerRef.current !== null) window.clearTimeout(deckSpinUpTimerRef.current);
+    deckSpinUpTimerRef.current = window.setTimeout(() => {
+      setIsDeckSpinningUp(false);
+      deckSpinUpTimerRef.current = null;
+    }, durationMs);
+  };
+
+  const clearDeckInsertSpin = () => {
+    if (deckSpinUpTimerRef.current !== null) {
+      window.clearTimeout(deckSpinUpTimerRef.current);
+      deckSpinUpTimerRef.current = null;
+    }
+    setIsDeckSpinningUp(false);
+  };
 
   const persistCassette = (cassette: Cassette) => {
     setCassettes((current) => current.map((item) => item.id === cassette.id ? cassette : item));
@@ -608,12 +643,14 @@ export default function MusicPage() {
     setPlaylist((current) => [...current, entry]);
     setPendingCassetteId(null);
     setSnappedTapeId(cassette.id);
-    if (playlist.length === 0 && !isPlaying) {
+    if (!activeCassetteId || (playlist.length === 0 && !isPlaying)) {
       if (currentSide?.kind === 'audio') saveProgress(true);
       setActiveQueueId(entry.id);
       setActiveCassetteId(cassette.id);
       setActiveSide('A');
       setIsPlaying(false);
+      setTableInsertPulse((pulse) => pulse + 1);
+      triggerDeckInsertSpin();
     }
   };
 
@@ -626,18 +663,70 @@ export default function MusicPage() {
       return;
     }
     if (currentSide?.kind === 'audio' && isPlaying) saveProgress(true);
+    playCassetteInsertSound();
     setIsPlaying(false);
     setIsFastForwarding(false);
     setActiveQueueId(entry.id);
     setActiveCassetteId(entry.cassetteId);
     setActiveSide('A');
     setAutoStartEntry(entry);
+    setTableInsertPulse((pulse) => pulse + 1);
+    triggerDeckInsertSpin();
+  };
+
+  const cycleLoopMode = () => {
+    setLoopMode((current) => current === 'off' ? 'all' : current === 'all' ? 'one' : 'off');
   };
 
   onTrackEndedRef.current = () => {
+    if (loopMode === 'one') {
+      if (currentSide?.kind === 'soundcloud') {
+        soundCloudWidgetRef.current?.seekTo(0);
+        soundCloudWidgetRef.current?.play();
+        setPlaybackTime(0);
+        setIsPlaying(true);
+      } else if (currentSide?.kind === 'video') {
+        sendVideoCommand('seekTo', [0, true]);
+        sendVideoCommand('playVideo');
+        setPlaybackTime(0);
+        setIsPlaying(true);
+      } else if (currentSide?.kind === 'audio' && trackAudioPlayer.isReady) {
+        void trackAudioPlayer.seek(0).then(() => trackAudioPlayer.play()).then(() => {
+          setPlaybackTime(0);
+          setIsPlaying(true);
+        }).catch(() => setIsPlaying(false));
+      }
+      return;
+    }
+
     setIsPlaying(false);
     const next = nextQueueEntry(playlist, activeQueueId);
-    if (next) startQueueEntry(next);
+    if (next) {
+      startQueueEntry(next);
+      return;
+    }
+    if (loopMode === 'all') {
+      if (playlist.length > 0) {
+        startQueueEntry(playlist[0]);
+      } else if (activeCassette && currentSide) {
+        if (currentSide.kind === 'audio' && trackAudioPlayer.isReady) {
+          void trackAudioPlayer.seek(0).then(() => trackAudioPlayer.play()).then(() => {
+            setPlaybackTime(0);
+            setIsPlaying(true);
+          }).catch(() => setIsPlaying(false));
+        } else if (currentSide.kind === 'soundcloud') {
+          soundCloudWidgetRef.current?.seekTo(0);
+          soundCloudWidgetRef.current?.play();
+          setPlaybackTime(0);
+          setIsPlaying(true);
+        } else if (currentSide.kind === 'video') {
+          sendVideoCommand('seekTo', [0, true]);
+          sendVideoCommand('playVideo');
+          setPlaybackTime(0);
+          setIsPlaying(true);
+        }
+      }
+    }
   };
 
   useEffect(() => {
@@ -689,6 +778,7 @@ export default function MusicPage() {
       setIsInserting(false);
       setDragOffset(0);
       insertionTimerRef.current = null;
+      if (cassette.sideA) triggerDeckInsertSpin(1350);
     }, 700);
   };
 
@@ -734,6 +824,7 @@ export default function MusicPage() {
       setIsPlaying(false);
       setIsFastForwarding(false);
       setActiveCassetteId(null);
+      clearDeckInsertSpin();
     }
     setPlaylist((current) => current.filter((item) => item.id !== entry.id));
   };
@@ -755,6 +846,8 @@ export default function MusicPage() {
       setActiveQueueId(replacement.id);
       setActiveCassetteId(cassette.id);
       setActiveSide('A');
+      setTableInsertPulse((pulse) => pulse + 1);
+      triggerDeckInsertSpin();
     }
     setPlaylist((current) => current.map((item) => item.id === entry.id ? replacement : item));
     setPendingCassetteId(null);
@@ -767,6 +860,7 @@ export default function MusicPage() {
     setDraggedTapeId(null);
     setDropTargetId(null);
     setQueueDropTargetId(null);
+    setSlotDropHighlight(false);
     setDragPreview(null);
   };
 
@@ -856,14 +950,13 @@ export default function MusicPage() {
     drag.hasMoved = true;
     setDraggedTapeId(drag.cassetteId);
     setIsDragging(true);
-    setIsPlayerExpanded(true);
     const cassette = cassettes.find((item) => item.id === drag.cassetteId);
     setDragPreview({ title: cassette?.sideATitle ?? 'CASSETTE', x: event.clientX, y: event.clientY });
-    const queueTarget = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-queue-slot]');
+    const hoveredElement = document.elementFromPoint(event.clientX, event.clientY);
+    const queueTarget = hoveredElement?.closest<HTMLElement>('[data-queue-slot]');
     setQueueDropTargetId(queueTarget?.dataset.queueSlot ?? null);
-    const hoveredCassette = document
-      .elementFromPoint(event.clientX, event.clientY)
-      ?.closest<HTMLButtonElement>('[data-cassette-id]');
+    setSlotDropHighlight(Boolean(hoveredElement?.closest('[data-cassette-slot]')));
+    const hoveredCassette = hoveredElement?.closest<HTMLButtonElement>('[data-cassette-id]');
     setDropTargetId(hoveredCassette?.dataset.cassetteId ?? null);
   };
 
@@ -886,7 +979,7 @@ export default function MusicPage() {
 
     const dropElement = document.elementFromPoint(event.clientX, event.clientY);
     const targetCassetteId = dropElement?.closest<HTMLButtonElement>('[data-cassette-id]')?.dataset.cassetteId;
-    
+
     const targetCassette = cassettes.find((cassette) => cassette.id === targetCassetteId);
     const sourceCassette = cassettes.find((cassette) => cassette.id === drag.cassetteId);
 
@@ -900,11 +993,12 @@ export default function MusicPage() {
     const queueId = dropElement?.closest<HTMLElement>('[data-queue-slot]')?.dataset.queueSlot;
     const queueEntry = playlist.find((entry) => entry.id === queueId);
     const slot = dropElement?.closest('[data-cassette-slot]');
-    
+
     if (sourceCassette && queueEntry) {
       replaceQueueEntry(queueEntry, sourceCassette);
     } else if (sourceCassette && slot) {
-      insertCassetteFromDrop(sourceCassette);
+      const droppedInsideDeck = Boolean(slot.closest('#cassette-deck'));
+      insertCassetteFromDrop(sourceCassette, droppedInsideDeck);
     }
   };
 
@@ -916,6 +1010,7 @@ export default function MusicPage() {
   const handleInspectPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (isInserting || !event.isPrimary || event.button !== 0) return;
     event.preventDefault();
+    setIsInspectDragging(true);
     inspectDragRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -936,7 +1031,10 @@ export default function MusicPage() {
   };
 
   const handleInspectPointerEnd = (event: PointerEvent<HTMLDivElement>) => {
-    if (inspectDragRef.current?.pointerId === event.pointerId) inspectDragRef.current = null;
+    if (inspectDragRef.current?.pointerId === event.pointerId) {
+      inspectDragRef.current = null;
+      setIsInspectDragging(false);
+    }
   };
 
   const handleInspectKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -968,7 +1066,7 @@ export default function MusicPage() {
     if (pointerStartY.current === null) return;
     const distance = event.clientY - pointerStartY.current;
     pointerStartY.current = null;
-    if (distance > 110 && selectedCassette) {
+    if (distance > 85 && selectedCassette) {
       suppressInspectInsertClickRef.current = true;
       window.setTimeout(() => { suppressInspectInsertClickRef.current = false; }, 0);
       startInsertion(selectedCassette);
@@ -986,6 +1084,7 @@ export default function MusicPage() {
     setSelectedCassetteId(null);
     setIsInserting(false);
     setDragOffset(0);
+    triggerDeckInsertSpin(1350);
   };
 
   const togglePlay = () => {
@@ -1055,35 +1154,39 @@ export default function MusicPage() {
   }, [activeCassette, currentSide, currentSideTitle, isAudioReady, isPlaying, soundCloudReady]);
 
 const changeCassette = (direction: -1 | 1) => {
-    // キューが空、または現在再生中のキューIDが存在しない場合は何もしない
-    if (playlist.length === 0 || !activeQueueId) return;
+    if (playlist.length === 0) return;
 
     if (currentSide?.kind === 'audio') saveProgress(true);
-    
-    // 現在再生している曲の、キュー（playlist）内でのインデックスを取得
-    const index = playlist.findIndex((entry) => entry.id === activeQueueId);
-    if (index === -1) return;
 
-    // 前/次のキューエントリーを取得（リストの端に到達したらループさせる）
-    const nextEntry = playlist[(index + direction + playlist.length) % playlist.length];
+    const currentIndex = activeQueueId
+      ? playlist.findIndex((entry) => entry.id === activeQueueId)
+      : 0;
+    const baseIndex = currentIndex === -1 ? 0 : currentIndex;
+    const nextEntry = playlist[(baseIndex + direction + playlist.length) % playlist.length];
 
-    // 新しいキューの状態をセット
+    if (isPlaying) {
+      startQueueEntry(nextEntry);
+      return;
+    }
+
+    playCassetteInsertSound();
     setActiveQueueId(nextEntry.id);
     setActiveCassetteId(nextEntry.cassetteId);
     setActiveSide('A');
     setAutoStartEntry(null);
     setIsPlaying(false);
+    setTableInsertPulse((pulse) => pulse + 1);
+    triggerDeckInsertSpin();
   };
 
-  const stopOrEject = () => {
+  const ejectActiveCassette = () => {
     if (!activeCassette) return;
     if (currentSide?.kind === 'audio') {
       trackAudioPlayer.pause();
     }
-    if (isPlaying) {
-      saveProgress(true);
-      setIsPlaying(false);
-      return;
+    clearDeckInsertSpin();
+    if (activeQueueId) {
+      setPlaylist((current) => current.filter((item) => item.id !== activeQueueId));
     }
     setActiveQueueId(null);
     setAutoStartEntry(null);
@@ -1099,17 +1202,35 @@ const changeCassette = (direction: -1 | 1) => {
     trackAudioPlayer.stop();
     soundCloudWidgetRef.current?.pause();
     soundCloudWidgetRef.current?.seekTo(0);
+    playCassetteInsertSound();
     setPlaybackTime(0);
     setActiveCassetteId(null);
     setIsPlaying(false);
+    setIsFastForwarding(false);
+    setIsRewinding(false);
+  };
+
+  const stopOrEject = () => {
+    if (!activeCassette) return;
+    if (isPlaying) {
+      if (currentSide?.kind === 'audio') {
+        trackAudioPlayer.pause();
+      }
+      saveProgress(true);
+      setIsPlaying(false);
+      return;
+    }
+    ejectActiveCassette();
   };
 
   const flipSide = () => {
     if (!activeCassette) return;
     if (currentSide?.kind === 'audio') saveProgress(true);
-    setActiveQueueId(null);
+    playButtonTouchSound();
     setAutoStartEntry(null);
     setIsPlaying(false);
+    setIsFastForwarding(false);
+    setIsRewinding(false);
     setActiveSide((side) => side === 'A' ? 'B' : 'A');
     setIsFlipping(true);
   };
@@ -1132,6 +1253,7 @@ const changeCassette = (direction: -1 | 1) => {
   };
 
   const beginRewind = () => {
+    setIsRewinding(true);
     if (currentSide?.kind === 'audio' && isAudioReady) {
       trackAudioPlayer.pause();
       saveProgress(true);
@@ -1149,6 +1271,7 @@ const changeCassette = (direction: -1 | 1) => {
   };
 
   const endRewind = () => {
+    setIsRewinding(false);
     if (rewindTimer.current !== null) {
       window.clearInterval(rewindTimer.current);
       rewindTimer.current = null;
@@ -1380,7 +1503,6 @@ const changeCassette = (direction: -1 | 1) => {
       </header>
 
       <main className="music-room mx-auto flex min-h-[calc(100svh-65px)] max-w-6xl flex-col px-6 pb-44 pt-8 md:pt-12">
-                 <AnalogVU player={trackAudioPlayer} isPlaying={isPlaying} initialX={40} initialY={120} />
         <div className="flex items-end justify-between gap-5">
           <div>
             <p className="text-[10px] uppercase tracking-[0.32em] text-neutral-500">CHRIS / MUSIC</p>
@@ -1390,11 +1512,31 @@ const changeCassette = (direction: -1 | 1) => {
         </div>
 
         <section aria-label="Cassette shelf" className="music-room-shelf mt-8">
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <p className="text-[10px] uppercase tracking-[0.28em] text-neutral-500">TAPE COLLECTION</p>
-            <button type="button" onClick={createBlankCassette} className="text-[9px] uppercase tracking-[0.18em] text-neutral-500 transition hover:text-white">
-              + Blank tape
-            </button>
+            <div className="flex items-center gap-3">
+              {pendingCassette && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCassetteId(pendingCassette.id)}
+                    className="text-[9px] uppercase tracking-[0.18em] text-neutral-300 transition hover:text-[#00ff66]"
+                  >
+                    INSPECT {pendingCassette.title}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={insertPendingCassette}
+                    className="border border-[#00ff66]/70 px-2 py-0.5 text-[9px] uppercase tracking-[0.18em] text-[#00ff66] transition hover:bg-[#00ff66] hover:text-black"
+                  >
+                    INSERT →
+                  </button>
+                </>
+              )}
+              <button type="button" onClick={createBlankCassette} className="text-[9px] uppercase tracking-[0.18em] text-neutral-500 transition hover:text-white">
+                + Blank tape
+              </button>
+            </div>
           </div>
           <div className="cassette-shelf-grid">
             {cassettes.map((cassette, index) => (
@@ -1411,125 +1553,176 @@ const changeCassette = (direction: -1 | 1) => {
                 onAnimationEnd={() => {
                   if (snappedTapeId === cassette.id) setSnappedTapeId(null);
                 }}
+                onDoubleClick={() => enqueueCassette(cassette)}
                 onClick={() => {
                   if (suppressNextCassetteClickRef.current) return;
-                  setPendingCassetteId(cassette.id);
+                  setPendingCassetteId((current) => current === cassette.id ? null : cassette.id);
                   setDragOffset(0);
                 }}
-              className={`cassette-shelf-tape group relative flex items-center border border-white/20 bg-gradient-to-br ${cassette.color} text-left shadow-[0_8px_18px_#000] transition duration-200 hover:-translate-y-1 hover:border-white/50 ${
+              className={`cassette-shelf-tape group ${
               dropTargetId === cassette.id ? 'cassette-drop-target' : ''
               } ${
               snappedTapeId === cassette.id ? 'cassette-snap-in' : ''
-              } ${draggedTapeId === cassette.id ? 'cassette-being-dragged' : ''}`}
+              } ${draggedTapeId === cassette.id ? 'cassette-being-dragged' : ''} ${
+              activeCassetteId === cassette.id ? 'is-loaded-on-shelf' : ''
+              }`}
               >
-                <span className="cassette-shelf-tape-seam" />
-                <span className="music-shelf-index">{String(index + 1).padStart(2, '0')}</span>
-                <img className="music-shelf-art" src="/music-artwork.png" alt="" />
-                <span className="cassette-shelf-label ml-2 min-w-0 flex-1">
-                  <span className="block truncate text-[9px] uppercase tracking-[0.12em] text-white">{cassette.title}</span>
-                  <span className="mt-1 block truncate text-[7px] uppercase tracking-[0.18em] text-white/50">
-                    CHRIS · {knownDurations[sideKey(cassette.id, 'A')] === undefined ? '--:--' : formattedPlaybackTime(knownDurations[sideKey(cassette.id, 'A')])}
+                <span className={`cassette-shelf-tape-body bg-gradient-to-br ${cassette.color}`}>
+                  <span className="cassette-shelf-tape-seam" />
+                  <span className="music-shelf-index">{String(index + 1).padStart(2, '0')}</span>
+                  <img className="music-shelf-art" src="/music-artwork.png" alt="" />
+                  <span className="cassette-shelf-label min-w-0 flex-1">
+                    <span className="block truncate text-[9px] uppercase tracking-[0.12em] text-white">{cassette.title}</span>
+                    <span className="mt-1 block truncate text-[7px] uppercase tracking-[0.18em] text-white/50">
+                      CHRIS · {knownDurations[sideKey(cassette.id, 'A')] === undefined ? '--:--' : formattedPlaybackTime(knownDurations[sideKey(cassette.id, 'A')])}
+                    </span>
                   </span>
-                </span>
-                <span aria-hidden="true" className="ml-2 flex shrink-0 flex-col gap-1 text-[6px] text-white/40">
-                  <span>90</span>
-                  <span>TYPE I</span>
+                  <span aria-hidden="true" className="music-shelf-type flex shrink-0 flex-col gap-1 text-[6px] text-white/40">
+                    <span>90</span>
+                    <span>TYPE I</span>
+                  </span>
                 </span>
               </button>
             ))}
           </div>
         </section>
 
-        <section ref={displayRef} className={`music-room-display ${isPlaying ? 'is-playing' : ''}`} aria-label="Selected cassette display">
-          <div className="music-room-bar" aria-hidden="true">
-            <span>CHRIS<br />LISTENING BAR</span><i /><i /><i />
-          </div>
-          {isPlaying && (
-            <div className="music-room-dancer" aria-hidden="true">
-              <svg viewBox="0 0 32 40" shapeRendering="crispEdges">
-                <g className="music-room-dancer-body">
-                  <path fill="#050505" d="M8 3h3V1h10v2h3v3h2v11h-2v3h-2v2h3v3h2v8h-4v3h-5v-2h-4v2H9v-3H5v-8h2v-3h3v-2H8v-3H6V6h2z" />
-                  <path fill="#f2f2f2" d="M10 8h12v9h-2v2h-8v-2h-2z" />
-                  <path fill="#262626" d="M9 5h2V3h10v2h2v6h-3V8h-2v2h-3V8h-2v2H9z" />
-                  <path fill="#00ff66" d="M6 9h3v7H6zm17 0h3v7h-3z" />
-                  <path fill="#050505" d="M12 12h2v2h-2zm6 0h2v2h-2zm-3 4h3v1h-3z" />
-                  <path fill="#f2f2f2" d="M10 22h12v3h2v7h-5v-3h-6v3H8v-7h2z" />
-                  <path fill="#555" d="M15 22h2v7h-2zM9 29h3v3H9zm11 0h3v3h-3z" />
-                  <path fill="#00ff66" d="M13 25h6v2h-6z" />
-                  <g className="music-room-dancer-arm-left">
-                    <path fill="#050505" d="M6 22h4v3H8v6H4v-7h2z" />
-                    <path fill="#eee" d="M6 25h2v4H6z" />
-                  </g>
-                  <g className="music-room-dancer-arm-right">
-                    <path fill="#050505" d="M22 22h4v2h2v7h-4v-6h-2z" />
-                    <path fill="#eee" d="M24 25h2v4h-2z" />
-                  </g>
-                </g>
-                <g className="music-room-dancer-feet">
-                  <path fill="#050505" d="M9 32h6v4h2v-4h6v5h2v2h-9v-3h-1v3H7v-2h2z" />
-                  <path fill="#eee" d="M9 37h5v1H9zm9 0h5v1h-5z" />
-                </g>
-              </svg>
+        <div className="music-room-workspace mt-6">
+          <section className="music-playlist" aria-label="Tape slot and custom cassette playlist">
+            <div className="music-playlist-heading">
+              <h2>TAPE SLOT <span>{String(playlist.length).padStart(2, '0')}</span></h2>
+              <span>INSERT / QUEUE</span>
             </div>
-          )}
-          
-          <div className="music-room-feature">
-            <div className="music-room-art">
-              <img src="/music-artwork.png" alt="" />
-              <span>{activeCassette ? currentSideTitle : 'CHRIS / MUSIC'}</span>
+            <button
+              type="button"
+              className={`music-cassette-slot ${pendingCassette ? 'has-pending' : ''} ${slotDropHighlight ? 'is-drop-target' : ''}`}
+              data-cassette-slot
+              onClick={insertPendingCassette}
+            >
+              <span>▼ MODULAR TAPE BAY ▼</span>
+              <strong>{pendingCassette ? `INSERT ${pendingCassette.title}` : 'DROP OR SELECT A TAPE'}</strong>
+            </button>
+            {playlist.length ? (
+              <ol className="music-playlist-items">
+                {playlist.map((entry, index) => {
+                  const cassette = cassettes.find((item) => item.id === entry.cassetteId);
+                  return (
+                    <li
+                      key={entry.id}
+                      data-queue-slot={entry.id}
+                      className={`${entry.id === activeQueueId ? 'is-current' : ''} ${entry.id === queueDropTargetId ? 'is-drop-target' : ''}`}
+                    >
+                      <button type="button" className="music-queue-play" onClick={() => startQueueEntry(entry)} aria-label={`Play queued ${cassette?.title ?? 'cassette'}`}>
+                        <span>{String(index + 1).padStart(2, '0')}</span>
+                        <strong>{cassette?.sideATitle ?? 'Unavailable cassette'}</strong>
+                        <span>{entry.id === activeQueueId ? 'LOADED' : 'PLAY'}</span>
+                      </button>
+                      <button type="button" className="music-queue-remove" onClick={() => removeQueueEntry(entry)} aria-label={`Remove ${cassette?.title ?? 'cassette'} from queue`}>×</button>
+                    </li>
+                  );
+                })}
+              </ol>
+            ) : <p className="music-playlist-empty">SELECT OR DRAG A TAPE TO INSERT</p>}
+          </section>
+
+          <section ref={displayRef} className={`music-room-display ${isPlaying ? 'is-playing' : ''}`} aria-label="Selected cassette display">
+            <div className="music-room-bar" aria-hidden="true">
+              <span>CHRIS<br />LISTENING BAR</span><i /><i /><i />
             </div>
-            
-            <div className={`music-room-tape ${isPlaying ? 'is-playing' : ''}`} aria-hidden="true">
-              <div className="music-room-tape-label">
-                <span>CHRIS // SIDE {activeCassette ? activeSide : 'A'}</span>
-                <strong>{activeCassette ? currentSideTitle : 'SELECT A TAPE'}</strong>
+            <div className="music-room-table" aria-hidden="true" />
+            <ListeningRoomDiorama isPlaying={isPlaying} isDeckSpinningUp={isDeckSpinningUp} />
+
+            <div key={activeCassette ? `${activeCassette.id}-${tableInsertPulse}` : 'empty-table'} className="music-room-feature">
+              <div className="music-room-art">
+                <img src="/music-artwork.png" alt="" />
+                <span>{activeCassette ? currentSideTitle : 'CHRIS / MUSIC'}</span>
               </div>
-              <div className="music-room-tape-window">
-                <span className="music-room-tape-reel" /><span className="music-room-tape-center" /><span className="music-room-tape-reel" />
-              </div>
+
+              {activeCassette ? (
+                <button
+                  type="button"
+                  onClick={() => setSelectedCassetteId(activeCassette.id)}
+                  onAnimationEnd={(event) => {
+                    if (event.animationName === 'cassette-flip') setIsFlipping(false);
+                  }}
+                  aria-label={`Inspect ${activeCassette.title} cassette`}
+                  className={`music-room-tape ${isDeckSpinningUp ? 'is-inserting' : ''} ${isPlaying ? 'is-playing' : ''} ${isFastForwarding ? 'is-fast-forwarding' : ''} ${isRewinding ? 'is-rewinding' : ''} ${isFlipping ? 'is-flipping' : ''}`}
+                >
+                  <span className={`music-room-tape-stripe bg-gradient-to-r ${activeCassette.color}`} aria-hidden="true" />
+                  <div className="music-room-tape-label">
+                    <span>CHRIS // SIDE {activeSide}</span>
+                    <strong>{currentSideTitle}</strong>
+                  </div>
+                  <div className="music-room-tape-window" aria-hidden="true">
+                    <span
+                      className="music-room-tape-reel"
+                      style={isJogging ? { transform: `rotate(${platterAngleRef.current}deg)` } : undefined}
+                    />
+                    <span className="music-room-tape-center">
+                      <span
+                        className="music-room-tape-progress"
+                        style={{ width: `${Math.round(turntableProgress * 100)}%` }}
+                      />
+                    </span>
+                    <span
+                      className="music-room-tape-reel"
+                      style={isJogging ? { transform: `rotate(${platterAngleRef.current}deg)` } : undefined}
+                    />
+                  </div>
+                </button>
+              ) : (
+                <div className="music-room-tape is-empty" aria-hidden="true">
+                  <div className="music-room-tape-label">
+                    <span>CHRIS // TABLE DECK</span>
+                    <strong>NO TAPE LOADED</strong>
+                  </div>
+                  <div className="music-room-tape-window">
+                    <span className="music-room-tape-empty-hint">← USE LEFT TAPE SLOT</span>
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
-          <div className="music-room-display-controls">
-            <p aria-live="polite">
-              {activeCassette
-                ? `${currentSideTitle} · SIDE ${activeSide} · ${isPlaying ? 'NOW PLAYING' : isAudioLoading ? 'LOADING' : waveformError ? 'ERROR' : currentSide ? 'READY' : 'BLANK SIDE'}`
-                : 'CHOOSE A CASSETTE'}
-            </p>
-            {activeCassette && (
-              <div className="music-room-actions">
-                {isPlaying && <button type="button" onClick={togglePlay}>PAUSE</button>}
-                <button type="button" onClick={() => setSelectedCassetteId(activeCassette.id)}>INSPECT TAPE</button>
-              </div>
-            )}
-          </div>
-        </section>
-        <section className="music-playlist" aria-label="Custom cassette playlist">
-          <div className="music-playlist-heading">
-            <h2>CASSETTE QUEUE <span>{String(playlist.length).padStart(2, '0')}</span></h2>
-            <span>INSERT IN PLAY ORDER</span>
-          </div>
-          <button type="button" className="music-cassette-slot" data-cassette-slot onClick={insertPendingCassette}>
-            <span>▼ MODULAR TAPE BAY ▼</span>
-            <strong>{pendingCassette ? `INSERT ${pendingCassette.title}` : 'SELECT A TAPE, THEN TAP HERE'}</strong>
-          </button>
-          {playlist.length ? (
-            <ol className="music-playlist-items">
-              {playlist.map((entry, index) => {
-                const cassette = cassettes.find((item) => item.id === entry.cassetteId);
-                return (
-                  <li key={entry.id} className={entry.id === activeQueueId ? 'is-current' : ''}>
-                    <button type="button" className="music-queue-play" onClick={() => startQueueEntry(entry)} aria-label={`Play queued ${cassette?.title ?? 'cassette'}`}>
-                      <span>{String(index + 1).padStart(2, '0')}</span>
-                      <strong>{cassette?.sideATitle ?? 'Unavailable cassette'}</strong>
-                      <span>{entry.id === activeQueueId ? 'LOADED' : 'PLAY'}</span>
+            <div className="music-room-display-controls">
+              <p aria-live="polite">
+                {activeCassette
+                  ? `${currentSideTitle} · SIDE ${activeSide} · ${isPlaying ? 'NOW PLAYING' : isAudioLoading ? 'LOADING' : waveformError ? 'ERROR' : currentSide ? 'READY' : 'BLANK SIDE'}`
+                  : pendingCassette
+                    ? `SELECTED: ${pendingCassette.title}`
+                    : 'CHOOSE A CASSETTE'}
+              </p>
+              {activeCassette ? (
+                <div className="music-room-actions">
+                  {currentSide && (
+                    <button
+                      type="button"
+                      disabled={currentSide.kind === 'audio' && !isAudioReady}
+                      onClick={togglePlay}
+                    >
+                      {isPlaying ? 'PAUSE' : 'PLAY'}
                     </button>
-                    <button type="button" className="music-queue-remove" onClick={() => removeQueueEntry(entry)} aria-label={`Remove ${cassette?.title ?? 'cassette'} from queue`}>×</button>
-                  </li>
-                );
-              })}
-            </ol>
-          ) : <p className="music-playlist-empty">SELECT A TAPE AND INSERT IT TO BUILD YOUR PLAYLIST</p>}
-        </section>
+                  )}
+                  <button type="button" onClick={flipSide}>FLIP</button>
+                  <button
+                    type="button"
+                    onClick={cycleLoopMode}
+                    aria-pressed={loopMode !== 'off'}
+                    className={loopMode !== 'off' ? 'is-active' : ''}
+                  >
+                    {loopMode === 'off' ? 'LOOP: OFF' : loopMode === 'all' ? 'LOOP: ALL' : 'LOOP: 1'}
+                  </button>
+                  <button type="button" onClick={ejectActiveCassette}>EJECT</button>
+                  <button type="button" onClick={() => setSelectedCassetteId(activeCassette.id)}>INSPECT</button>
+                </div>
+              ) : pendingCassette ? (
+                <div className="music-room-actions">
+                  <button type="button" onClick={insertPendingCassette}>INSERT</button>
+                  <button type="button" onClick={() => setSelectedCassetteId(pendingCassette.id)}>INSPECT</button>
+                </div>
+              ) : null}
+            </div>
+          </section>
+        </div>
+
         <Link to="/" className="music-room-back"><ArrowLeft size={16} aria-hidden="true" /> HOME</Link>
 
         {storageError && (
@@ -1579,10 +1772,67 @@ const changeCassette = (direction: -1 | 1) => {
             </span>
           </div>
 
-          <button type="button" className="music-cassette-slot music-deck-slot" data-cassette-slot onClick={insertPendingCassette}>
+          <button
+            type="button"
+            className={`music-cassette-slot music-deck-slot ${pendingCassette ? 'has-pending' : ''} ${slotDropHighlight ? 'is-drop-target' : ''}`}
+            data-cassette-slot
+            onClick={insertPendingCassette}
+          >
             <span>▼ MODULAR TAPE BAY ▼</span>
             <strong>{pendingCassette ? `INSERT ${pendingCassette.title}` : 'SELECT A TAPE, THEN TAP HERE'}</strong>
           </button>
+
+          <div
+            className={`tp7-cassette-well ${activeCassette ? 'has-tape' : 'is-empty'} ${isDeckSpinningUp ? 'is-inserting' : ''} ${isPlaying ? 'is-playing' : ''} ${isFastForwarding ? 'is-fast-forwarding' : ''} ${isRewinding ? 'is-rewinding' : ''}`}
+            aria-hidden="true"
+          >
+            <div className="tp7-cassette-well-header">
+              <span>DECK MECHANISM // HEAD &amp; CAPSTAN</span>
+              <span className="tp7-cassette-well-status">
+                <i className="tp7-mech-led" />
+                {!activeCassette
+                  ? 'NO CASSETTE'
+                  : isDeckSpinningUp
+                    ? 'SEATING · SPIN UP'
+                    : isFastForwarding
+                      ? 'FFWD 2X'
+                      : isRewinding
+                        ? 'REWIND'
+                        : isPlaying
+                          ? `RUNNING · SIDE ${activeSide}`
+                          : `LOCKED · SIDE ${activeSide}`}
+              </span>
+            </div>
+
+            {activeCassette ? (
+              <div key={`${activeCassette.id}-${deckInsertPulse}`} className="tp7-deck-cassette">
+                <div className={`tp7-deck-cassette-stripe bg-gradient-to-r ${activeCassette.color}`} />
+                <div className="tp7-deck-cassette-window">
+                  <span className="tp7-deck-spool">
+                    <span className="tp7-deck-spool-teeth" />
+                    <span className="tp7-deck-spool-core" />
+                  </span>
+                  <div className="tp7-deck-tape-bridge">
+                    <span className="tp7-deck-cassette-code">SIDE {activeSide}</span>
+                    <div className="tp7-deck-tape-track">
+                      <span className="tp7-deck-tape-ribbon" />
+                    </div>
+                    <span className="tp7-deck-head-pin" />
+                  </div>
+                  <span className="tp7-deck-spool">
+                    <span className="tp7-deck-spool-teeth" />
+                    <span className="tp7-deck-spool-core" />
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="tp7-deck-well-empty">
+                <span className="tp7-deck-spool-post" />
+                <span>INSERT CASSETTE INTO BAY</span>
+                <span className="tp7-deck-spool-post" />
+              </div>
+            )}
+          </div>
 
           <div className="tp7-player-content mx-auto flex w-full max-w-full flex-col items-center py-3">
             <div className="tp7-display-panel">
@@ -1591,6 +1841,9 @@ const changeCassette = (direction: -1 | 1) => {
                   {isAudioLoading ? 'LOAD' : isPlaying ? 'PLAY' : 'STP'}
                 </span>
                 <span>{currentSide ? `TRK 01/01 · SIDE ${activeSide}` : 'NO TAPE LOADED'}</span>
+                {loopMode !== 'off' && (
+                  <span className="tp7-display-loop">{loopMode === 'one' ? 'LOOP 1' : 'LOOP ALL'}</span>
+                )}
                 <span className="ml-auto">
                   {currentSide?.kind === 'soundcloud'
                     ? 'SC'
@@ -1639,6 +1892,9 @@ const changeCassette = (direction: -1 | 1) => {
                             : activeCassette ? 'BLANK SIDE' : 'INSERT CASSETTE TO BEGIN'}
                     </p>
                   </div>
+                </div>
+                <div className="tp7-vu-housing">
+                  <AnalogVU player={trackAudioPlayer} isPlaying={isPlaying} embedded />
                 </div>
                 {currentSide?.kind === 'video' && (
                   <div className="tp7-video-window">
@@ -1878,14 +2134,19 @@ const changeCassette = (direction: -1 | 1) => {
                     className="tp7-reel-face-inner pointer-events-none absolute inset-[7px] flex items-center justify-center overflow-hidden rounded-full border"
                   >
                     <div ref={reelFaceRef} className="absolute inset-0 flex items-center justify-center">
-                      <span className="tp7-platter-groove absolute inset-[7px] rounded-full border" />
-                      <span className="tp7-platter-groove absolute inset-[15px] rounded-full border" />
-                      <span className="tp7-platter-groove absolute inset-[25px] rounded-full border" />
-                      <span className="tp7-platter-index-mark tp7-platter-index-mark-left" />
-                      <span className="tp7-platter-index-mark tp7-platter-index-mark-right" />
-                      <span className="tp7-platter-index-mark tp7-platter-index-mark-top" />
-                      <div className="tp7-reel-hub relative flex h-16 w-16 items-center justify-center rounded-full border sm:h-[72px] sm:w-[72px]">
-                        <span className="tp7-reel-hub-ring absolute rounded-full" />
+                      <div
+                        key={deckInsertPulse}
+                        className={`absolute inset-0 flex items-center justify-center ${isDeckSpinningUp ? 'tp7-platter-spinup' : ''}`}
+                      >
+                        <span className="tp7-platter-groove absolute inset-[7px] rounded-full border" />
+                        <span className="tp7-platter-groove absolute inset-[15px] rounded-full border" />
+                        <span className="tp7-platter-groove absolute inset-[25px] rounded-full border" />
+                        <span className="tp7-platter-index-mark tp7-platter-index-mark-left" />
+                        <span className="tp7-platter-index-mark tp7-platter-index-mark-right" />
+                        <span className="tp7-platter-index-mark tp7-platter-index-mark-top" />
+                        <div className="tp7-reel-hub relative flex h-16 w-16 items-center justify-center rounded-full border sm:h-[72px] sm:w-[72px]">
+                          <span className="tp7-reel-hub-ring absolute rounded-full" />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1959,6 +2220,23 @@ const changeCassette = (direction: -1 | 1) => {
             </button>
             <button
               type="button"
+              aria-label={`Loop mode: ${loopMode === 'off' ? 'off' : loopMode === 'all' ? 'loop all' : 'loop one'}`}
+              aria-pressed={loopMode !== 'off'}
+              onPointerDown={handleHardwareButtonPointerDown}
+              onKeyDown={handleHardwareButtonKeyDown}
+              onClick={cycleLoopMode}
+              className={`tp7-footer-key ${loopMode !== 'off' ? 'is-loop-active' : ''}`}
+            >
+              <span className="tp7-footer-label">
+                {loopMode === 'off' ? 'LOOP' : loopMode === 'all' ? 'LOOP ALL' : 'LOOP 1'}
+              </span>
+              <span className="tp7-footer-led" />
+              {loopMode === 'one'
+                ? <Repeat1 className="tp7-footer-glyph" />
+                : <Repeat className="tp7-footer-glyph" />}
+            </button>
+            <button
+              type="button"
               aria-label={activeCassette?.locked ? 'Unlock cassette' : 'Lock cassette'}
               onPointerDown={handleHardwareButtonPointerDown}
               onKeyDown={handleHardwareButtonKeyDown}
@@ -2023,7 +2301,10 @@ const changeCassette = (direction: -1 | 1) => {
                 onKeyDown={handleInspectKeyDown}
                 className="cassette-inspect-stage"
               >
-                <div className="cassette-inspect-object" style={{ transform: `rotateX(${inspectRotation.x}deg) rotateY(${inspectRotation.y}deg)` }}>
+                <div
+                  className={`cassette-inspect-object ${isInspectDragging ? 'is-dragging' : ''}`}
+                  style={{ transform: `rotateX(${inspectRotation.x}deg) rotateY(${inspectRotation.y}deg)` }}
+                >
                   {(['A', 'B'] as const).map((side) => (
                     <div className={`cassette-inspect-face cassette-inspect-face-${side.toLowerCase()}`} key={side}>
                       <div className="cassette-inspect-label">
@@ -2056,14 +2337,14 @@ const changeCassette = (direction: -1 | 1) => {
                 <button type="button" onClick={() => setInspectRotation({ x: -12, y: -20 })}>RESET VIEW</button>
                 <button
                   type="button"
-                  className="cassette-inspect-insert"
+                  className={`cassette-inspect-insert ${dragOffset > 85 ? 'is-ready-to-insert' : ''}`}
                   onPointerDown={handleCassettePointerDown}
                   onPointerMove={handleCassettePointerMove}
                   onPointerUp={handleCassettePointerUp}
                   onPointerCancel={() => { pointerStartY.current = null; setDragOffset(0); }}
                   onClick={() => { if (!suppressInspectInsertClickRef.current) startInsertion(selectedCassette); }}
                 >
-                  ↓ SLIDE OR TAP TO INSERT
+                  {dragOffset > 85 ? 'RELEASE TO INSERT!' : '↓ SLIDE OR TAP TO INSERT'}
                 </button>
               </div>
             )}

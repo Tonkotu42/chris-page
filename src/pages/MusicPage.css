@@ -21,47 +21,107 @@
 .music-room-shelf {
   position: relative;
   z-index: 1;
-  max-width: 760px;
+  max-width: 960px;
   width: 100%;
   margin-right: auto;
   margin-left: auto;
   perspective: 1200px;
 }
 
+.music-room-workspace {
+  display: grid;
+  width: 100%;
+  max-width: 960px;
+  margin-right: auto;
+  margin-left: auto;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+@media (min-width: 720px) {
+  .music-room-workspace {
+    grid-template-columns: minmax(225px, 275px) minmax(0, 1fr);
+  }
+}
+
 .music-page .cassette-shelf-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px; /* 隙間を詰める */
+  gap: 3px;
   padding: 20px 14px;
   border: 2px solid #eee;
   background: #0a0a0a;
   box-shadow: inset 0 20px 20px -20px rgba(0,0,0,0.8), 6px 6px 0 #292929;
-  transform-style: preserve-3d;
 }
 
 .music-page .cassette-shelf-tape {
   position: relative;
-  width: 45px; /* 背表紙の幅 */
-  height: 180px; /* 背表紙の高さ */
+  width: 46px;
+  height: 180px;
   flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.music-page .cassette-shelf-tape:active {
+  transform: none;
+}
+
+.music-page .cassette-shelf-tape:hover,
+.music-page .cassette-shelf-tape:focus-visible {
+  z-index: 10;
+  outline: none;
+}
+
+.music-page .cassette-shelf-tape[aria-pressed="true"] {
+  z-index: 8;
+}
+
+.music-page .cassette-shelf-tape-body {
+  position: relative;
   display: flex;
+  width: 100%;
+  height: 100%;
   flex-direction: column;
   justify-content: space-between;
   align-items: center;
+  gap: 4px;
   padding: 10px 4px;
-  border: 1px solid #333;
+  border: 1px solid rgb(255 255 255 / 22%);
   border-radius: 2px;
-  background: #292929;
+  text-align: left;
   box-shadow: inset -2px 0 5px rgba(0,0,0,0.5), 2px 2px 5px rgba(0,0,0,0.8);
-  transform-origin: center right; /* 引き出す支点 */
-  transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s;
+  pointer-events: none;
+  will-change: transform;
+  backface-visibility: hidden;
+  transition: transform 220ms cubic-bezier(0.2, 0.85, 0.25, 1), border-color 180ms ease, box-shadow 180ms ease;
 }
 
+.music-page .cassette-shelf-tape.is-loaded-on-shelf .cassette-shelf-tape-body {
+  border-color: #fff;
+}
 
+.music-page .cassette-shelf-tape:hover .cassette-shelf-tape-body,
+.music-page .cassette-shelf-tape:focus-visible .cassette-shelf-tape-body {
+  transform: translate3d(0, -10px, 0);
+  border-color: #fff;
+  box-shadow: 6px 10px 16px rgba(0,0,0,0.9), inset 0 0 0 1px rgba(255,255,255,0.22);
+}
 
-.music-page .cassette-shelf-tape[aria-pressed="true"] {
+.music-page .cassette-shelf-tape[aria-pressed="true"] .cassette-shelf-tape-body {
+  transform: translate3d(0, -12px, 0);
   border-color: #00ff66;
-  box-shadow: 3px 3px 0 #00ff66;
+  box-shadow: 4px 4px 0 #00ff66, 8px 12px 18px rgba(0,0,0,0.9);
+}
+
+.music-page .cassette-shelf-tape:active .cassette-shelf-tape-body {
+  transform: translate3d(0, -6px, 0) scale(0.97);
 }
 
 /* 中のテキストを縦書き（横向き）に配置 */
@@ -70,6 +130,7 @@
   text-orientation: mixed;
   transform: rotate(180deg);
   white-space: nowrap;
+  padding: 5px 6px;
 }
 
 .music-shelf-index {
@@ -79,31 +140,28 @@
 }
 
 .music-shelf-art {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   flex: 0 0 auto;
-  margin-left: 6px;
   border: 1px solid #aaa;
   image-rendering: pixelated;
 }
 
-/* ホバー時に手前に引き出し、少し回転させる（Framer Motion風のスプリング感） */
-.music-page .cassette-shelf-tape:hover,
-.music-page .cassette-shelf-tape:focus-visible {
-  transform: translateZ(40px) translateX(-10px) rotateY(-15deg);
-  border-color: #fff;
-  box-shadow: 10px 10px 15px rgba(0,0,0,0.9), inset 0 0 0 1px rgba(255,255,255,0.2);
-  z-index: 10;
+.music-page .cassette-shelf-tape.cassette-drop-target {
+  transform: none;
+  box-shadow: none;
 }
 
-.music-page .cassette-drop-target {
+.music-page .cassette-drop-target .cassette-shelf-tape-body {
+  transform: translate3d(0, -8px, 0) scale(1.02);
+  border-color: #00ff66;
   box-shadow: 0 0 0 2px #fff;
 }
 
 .music-room-display {
   position: relative;
   display: grid;
-  min-height: 430px;
+  min-height: 495px;
   place-items: center;
   overflow: hidden;
   isolation: isolate;
@@ -182,65 +240,155 @@
   transform: rotateX(38deg);
 }
 
-.music-room-dancer {
+.music-room-diorama {
   position: absolute;
   z-index: 2;
-  bottom: 82px;
-  left: 31%;
-  width: 84px;
+  bottom: 50px;
+  left: 50%;
+  width: min(74%, 305px);
   pointer-events: none;
   transform: translateX(-50%);
 }
 
-.music-room-dancer svg {
+.music-room-diorama-svg {
   display: block;
   width: 100%;
+  height: auto;
   overflow: visible;
+  filter: drop-shadow(0 8px 10px rgb(0 0 0 / 75%));
 }
 
-.music-room-dancer-body {
-  transform-origin: 16px 32px;
-  animation: music-dancer-bounce 830ms steps(2, end) infinite;
+.diorama-plant {
+  transform-origin: 46px 21px;
+  animation: diorama-plant-sway 4.2s ease-in-out infinite;
 }
 
-.music-room-dancer-arm-left,
-.music-room-dancer-arm-right {
-  transform-origin: 8px 23px;
-  animation: music-dancer-arm 830ms steps(2, end) infinite alternate;
+.diorama-lamp-glow {
+  animation: diorama-lamp-breathe 3.2s ease-in-out infinite;
 }
 
-.music-room-dancer-arm-right {
-  transform-origin: 24px 23px;
-  animation-direction: alternate-reverse;
+.diorama-steam {
+  animation: diorama-steam-rise 2.4s steps(4, end) infinite;
 }
 
-.music-room-dancer-feet {
-  animation: music-dancer-feet 830ms steps(2, end) infinite alternate;
+.diorama-cat-tail {
+  transform-origin: 113px 56px;
+  animation: diorama-tail-twitch 3.6s steps(2, end) infinite;
 }
 
-@keyframes music-dancer-bounce {
-  0%, 100% { transform: translateY(0) rotate(-5deg); }
-  50% { transform: translateY(-2px) rotate(5deg); }
+.diorama-chris-body {
+  transform-origin: 69px 79px;
+  animation: diorama-chris-idle 2.4s steps(2, end) infinite;
 }
 
-@keyframes music-dancer-arm {
-  from { transform: rotate(-20deg); }
-  to { transform: rotate(20deg); }
+.music-room-diorama.is-playing .diorama-chris-body {
+  animation: diorama-chris-groove 680ms steps(2, end) infinite;
 }
 
-@keyframes music-dancer-feet {
-  from { transform: translateX(-1px); }
-  to { transform: translateX(1px); }
+.music-room-diorama.is-playing .diorama-chris-arm-left {
+  transform-origin: 64px 68px;
+  animation: diorama-arm-groove 680ms steps(2, end) infinite alternate;
+}
+
+.music-room-diorama.is-playing .diorama-chris-arm-right {
+  transform-origin: 74px 68px;
+  animation: diorama-arm-groove 680ms steps(2, end) infinite alternate-reverse;
+}
+
+.music-room-diorama.is-playing .diorama-speaker-woofer,
+.music-room-diorama.is-inserting .diorama-speaker-woofer {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: diorama-woofer-thump 360ms steps(2, end) infinite;
+}
+
+.music-room-diorama.is-playing .diorama-led,
+.music-room-diorama.is-inserting .diorama-led {
+  animation: diorama-led-pulse 680ms steps(2, end) infinite;
+}
+
+.diorama-wave-l {
+  animation: diorama-wave-pulse 720ms steps(2, end) infinite;
+}
+
+.diorama-wave-r {
+  animation: diorama-wave-pulse 720ms steps(2, end) 240ms infinite;
+}
+
+.diorama-note-1 {
+  animation: diorama-note-float 1.8s steps(5, end) infinite;
+}
+
+.diorama-note-2 {
+  animation: diorama-note-float 2.1s steps(5, end) 700ms infinite;
+}
+
+@keyframes diorama-plant-sway {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(2deg); }
+}
+
+@keyframes diorama-lamp-breathe {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 1; }
+}
+
+@keyframes diorama-steam-rise {
+  0% { transform: translateY(1px); opacity: 0.25; }
+  50% { transform: translateY(-2px); opacity: 0.85; }
+  100% { transform: translateY(-4px); opacity: 0; }
+}
+
+@keyframes diorama-tail-twitch {
+  0%, 75%, 100% { transform: translateY(0); }
+  85% { transform: translateY(-1px); }
+}
+
+@keyframes diorama-chris-idle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1px); }
+}
+
+@keyframes diorama-chris-groove {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50% { transform: translateY(-2px) rotate(2deg); }
+}
+
+@keyframes diorama-arm-groove {
+  from { transform: rotate(-10deg); }
+  to { transform: rotate(12deg); }
+}
+
+@keyframes diorama-woofer-thump {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+}
+
+@keyframes diorama-led-pulse {
+  0%, 100% { opacity: 0.65; }
+  50% { opacity: 1; }
+}
+
+@keyframes diorama-wave-pulse {
+  0%, 100% { opacity: 0.25; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-1px); }
+}
+
+@keyframes diorama-note-float {
+  0% { transform: translateY(2px); opacity: 0; }
+  25% { opacity: 1; }
+  100% { transform: translateY(-9px); opacity: 0; }
 }
 
 .music-room-feature {
   position: relative;
+  z-index: 1;
   display: flex;
   width: min(75%, 510px);
   align-items: flex-end;
   justify-content: center;
   gap: 12px;
-  padding: 30px 0 80px;
+  padding: 16px 0 185px;
   animation: music-room-settle 550ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
@@ -275,13 +423,43 @@
 }
 
 .music-room-tape {
+  position: relative;
   width: min(54%, 250px);
   flex: 0 0 auto;
   padding: 10px;
   border: 3px solid #eee;
   background: #222;
   box-shadow: 5px 5px 0 #050505;
+  color: #fff;
+  cursor: pointer;
+  text-align: left;
   transform: rotate(5deg);
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.music-room-tape:hover:not(.is-empty) {
+  border-color: #00ff66;
+  box-shadow: 6px 6px 0 #00ff66;
+  transform: rotate(3deg) translateY(-3px);
+}
+
+.music-room-tape.is-flipping {
+  animation: cassette-flip 520ms cubic-bezier(0.25, 0.75, 0.25, 1);
+}
+
+.music-room-tape.is-empty {
+  border: 2px dashed #555;
+  background: rgb(10 10 10 / 78%);
+  box-shadow: inset 0 0 12px rgb(0 0 0 / 80%);
+  cursor: default;
+  transform: rotate(2deg);
+}
+
+.music-room-tape-stripe {
+  display: block;
+  height: 5px;
+  margin-bottom: 6px;
+  border: 1px solid rgb(255 255 255 / 25%);
 }
 
 .music-room-tape-label {
@@ -290,6 +468,12 @@
   background: #eee;
   color: #050505;
   text-align: left;
+}
+
+.music-room-tape.is-empty .music-room-tape-label {
+  background: #161616;
+  color: #888;
+  border: 1px solid #333;
 }
 
 .music-room-tape-label span,
@@ -319,6 +503,19 @@
   background: #050505;
 }
 
+.music-room-tape.is-empty .music-room-tape-window {
+  border-style: dashed;
+  border-color: #444;
+  padding: 0 8px;
+}
+
+.music-room-tape-empty-hint {
+  color: #777;
+  font: 8px "Silkscreen", "DotGothic16", monospace;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+
 .music-room-tape-reel {
   width: 47px;
   height: 47px;
@@ -328,23 +525,47 @@
   box-shadow: inset 0 0 0 7px #050505;
 }
 
+.music-room-tape.is-inserting:not(.is-playing):not(.is-fast-forwarding):not(.is-rewinding) .music-room-tape-reel {
+  animation: music-room-reel-spinup 1.2s cubic-bezier(0.18, 0.78, 0.35, 1) 120ms both;
+}
+
 .music-room-tape.is-playing .music-room-tape-reel {
-  animation: music-room-reel 2s steps(4, end) infinite;
+  animation: music-room-reel 1.6s linear infinite;
+}
+
+.music-room-tape.is-fast-forwarding .music-room-tape-reel {
+  animation: music-room-reel 420ms linear infinite;
+}
+
+.music-room-tape.is-rewinding .music-room-tape-reel {
+  animation: music-room-reel 420ms linear infinite reverse;
 }
 
 .music-room-tape-center {
-  width: 26px;
+  position: relative;
+  width: 28px;
   height: 20px;
+  overflow: hidden;
   border: 1px solid #777;
-  background: #333;
+  background: #222;
+}
+
+.music-room-tape-progress {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: #00ff66;
+  opacity: 0.7;
+  transition: width 120ms linear;
 }
 
 .music-room-display-controls {
   position: absolute;
+  z-index: 4;
   right: 12px;
   bottom: 10px;
   left: 12px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 10px;
@@ -389,15 +610,16 @@
 }
 
 .music-room-actions button:hover,
+.music-room-actions button.is-active,
 .music-room-back:hover {
   border-color: #00ff66;
   color: #00ff66;
 }
 
 .music-playlist {
-  width: min(100%, 760px);
-  align-self: center;
-  margin-top: 24px;
+  display: flex;
+  width: 100%;
+  flex-direction: column;
   padding: 14px;
   border: 2px solid #fff;
   background: #0a0a0a;
@@ -426,7 +648,7 @@
 .music-cassette-slot {
   display: flex;
   width: 100%;
-  min-height: 65px;
+  min-height: 68px;
   flex-direction: column;
   justify-content: center;
   gap: 6px;
@@ -438,6 +660,7 @@
   cursor: pointer;
   font: 9px "Silkscreen", "DotGothic16", monospace;
   text-align: center;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 
 .music-cassette-slot span {
@@ -451,6 +674,12 @@
   white-space: nowrap;
 }
 
+.music-cassette-slot.has-pending,
+.music-cassette-slot.is-drop-target {
+  border-color: #00ff66;
+  box-shadow: inset 0 -5px 0 #0b3d1f, 0 0 14px rgb(0 255 102 / 28%);
+}
+
 .music-cassette-slot:hover,
 .music-cassette-slot:focus-visible,
 .music-page.is-dragging .music-cassette-slot {
@@ -461,9 +690,11 @@
 
 .music-playlist-items {
   display: grid;
+  max-height: 250px;
   gap: 6px;
   margin-top: 12px;
   padding: 0;
+  overflow-y: auto;
   list-style: none;
 }
 
@@ -473,8 +704,9 @@
   background: #151515;
 }
 
-.music-playlist-items li.is-current {
-  border-color: #fff;
+.music-playlist-items li.is-current,
+.music-playlist-items li.is-drop-target {
+  border-color: #00ff66;
   box-shadow: inset 3px 0 0 #00ff66;
 }
 
@@ -535,6 +767,283 @@
   box-shadow: inset 0 -4px 0 #333, 3px 3px 0 #050505;
 }
 
+.tp7-cassette-well {
+  position: relative;
+  margin-top: 8px;
+  padding: 6px 8px 7px;
+  overflow: hidden;
+  border: 2px solid #777;
+  background:
+    repeating-linear-gradient(180deg, #07080a 0 3px, #0c0d10 3px 6px);
+  box-shadow: inset 0 4px 10px rgb(0 0 0 / 85%), 3px 3px 0 #050505;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.tp7-cassette-well.has-tape {
+  border-color: #aaa;
+}
+
+.tp7-cassette-well.is-inserting {
+  border-color: #00ff66;
+  box-shadow: inset 0 4px 10px rgb(0 0 0 / 85%), 0 0 0 1px rgb(0 255 102 / 30%), 3px 3px 0 #050505;
+}
+
+.tp7-cassette-well-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+  color: #8e9097;
+  font: 6px "Silkscreen", "DotGothic16", monospace;
+  letter-spacing: 0.08em;
+}
+
+.tp7-cassette-well-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #ccc;
+}
+
+.tp7-mech-led {
+  width: 5px;
+  height: 5px;
+  background: #444;
+}
+
+.tp7-cassette-well.is-inserting .tp7-mech-led,
+.tp7-cassette-well.is-playing .tp7-mech-led,
+.tp7-cassette-well.is-fast-forwarding .tp7-mech-led,
+.tp7-cassette-well.is-rewinding .tp7-mech-led {
+  background: #00ff66;
+  box-shadow: 0 0 6px #00ff66;
+}
+
+.tp7-cassette-well.is-inserting .tp7-cassette-well-status,
+.tp7-cassette-well.is-playing .tp7-cassette-well-status {
+  color: #00ff66;
+}
+
+.tp7-deck-cassette {
+  padding: 4px 6px 5px;
+  border: 1px solid #d4d4d8;
+  background: linear-gradient(180deg, #25262b, #15161a);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 16%), 0 3px 6px rgb(0 0 0 / 70%);
+}
+
+.tp7-cassette-well.is-inserting .tp7-deck-cassette {
+  animation: tp7-cassette-seat 360ms cubic-bezier(0.2, 0.85, 0.3, 1) both;
+}
+
+.tp7-deck-cassette-stripe {
+  height: 3px;
+  margin-bottom: 4px;
+  border: 1px solid rgb(255 255 255 / 20%);
+}
+
+.tp7-deck-cassette-window {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 1px solid #555;
+  background: #060708;
+  box-shadow: inset 0 2px 6px rgb(0 0 0 / 90%);
+}
+
+.tp7-deck-spool {
+  position: relative;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 50%;
+  background: radial-gradient(circle, #18191c 0 42%, #2a2b30 43% 68%, #0d0e11 69% 100%);
+  border: 1px solid #666;
+  will-change: transform;
+}
+
+.tp7-deck-spool-teeth {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: repeating-conic-gradient(#eee 0deg 22deg, #191a1d 22deg 60deg);
+  box-shadow: inset 0 0 0 3px #090a0c;
+  will-change: transform;
+}
+
+.tp7-deck-spool-core {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border: 1px solid #050505;
+  border-radius: 50%;
+  background: #ddd;
+}
+
+.tp7-cassette-well.is-inserting .tp7-deck-spool {
+  animation: tp7-spool-spinup 1.18s cubic-bezier(0.18, 0.72, 0.3, 1) 140ms both;
+}
+
+.tp7-cassette-well.is-playing .tp7-deck-spool-teeth {
+  animation: music-room-reel 1.35s linear infinite;
+}
+
+.tp7-cassette-well.is-fast-forwarding .tp7-deck-spool-teeth {
+  animation: music-room-reel 360ms linear infinite;
+}
+
+.tp7-cassette-well.is-rewinding .tp7-deck-spool-teeth {
+  animation: music-room-reel 360ms linear infinite reverse;
+}
+
+.tp7-deck-tape-bridge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.tp7-deck-cassette-code {
+  color: #a5a7ad;
+  font: 6px "Silkscreen", "DotGothic16", monospace;
+  letter-spacing: 0.14em;
+}
+
+.tp7-deck-tape-track {
+  position: relative;
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  border: 1px solid #444;
+  background: #121317;
+}
+
+.tp7-deck-tape-ribbon {
+  position: absolute;
+  inset: 1px -32px;
+  background: repeating-linear-gradient(90deg, #5a4636 0 10px, #35281e 10px 14px, #00ff66 14px 16px, #473629 16px 26px);
+  opacity: 0.85;
+  will-change: transform;
+}
+
+.tp7-cassette-well.is-inserting .tp7-deck-tape-ribbon {
+  animation: tp7-ribbon-prime 1.18s cubic-bezier(0.18, 0.72, 0.3, 1) 140ms both;
+}
+
+.tp7-cassette-well.is-playing .tp7-deck-tape-ribbon {
+  animation: tp7-ribbon-run 700ms linear infinite;
+}
+
+.tp7-cassette-well.is-fast-forwarding .tp7-deck-tape-ribbon {
+  animation: tp7-ribbon-run 220ms linear infinite;
+}
+
+.tp7-cassette-well.is-rewinding .tp7-deck-tape-ribbon {
+  animation: tp7-ribbon-run 220ms linear infinite reverse;
+}
+
+.tp7-deck-head-pin {
+  width: 34px;
+  height: 3px;
+  background: #666;
+  box-shadow: inset 0 1px 0 #bbb;
+  transition: transform 200ms ease, background-color 200ms ease;
+}
+
+.tp7-cassette-well.is-inserting .tp7-deck-head-pin {
+  animation: tp7-head-engage 340ms cubic-bezier(0.2, 0.8, 0.3, 1) 120ms both;
+}
+
+.tp7-cassette-well.is-playing .tp7-deck-head-pin {
+  background: #00ff66;
+  transform: translateY(-1px);
+}
+
+.tp7-deck-well-empty {
+  display: flex;
+  height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  border: 1px dashed #3e4047;
+  background: #050506;
+  color: #6f727a;
+  font: 7px "Silkscreen", "DotGothic16", monospace;
+  letter-spacing: 0.1em;
+}
+
+.tp7-deck-spool-post {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #444;
+  border-radius: 50%;
+  background: #141518;
+}
+
+.tp7-platter-spinup {
+  animation: tp7-platter-spinup 1.15s cubic-bezier(0.18, 0.78, 0.35, 1) 140ms both;
+  will-change: transform;
+}
+
+@keyframes tp7-cassette-seat {
+  0% {
+    transform: translateY(-20px) scale(0.95);
+    opacity: 0.25;
+  }
+  65% {
+    transform: translateY(2px) scale(1.01);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes tp7-spool-spinup {
+  0% { transform: rotate(0deg); }
+  55% { transform: rotate(520deg); }
+  100% { transform: rotate(720deg); }
+}
+
+@keyframes tp7-platter-spinup {
+  0% { transform: rotate(0deg); }
+  60% { transform: rotate(280deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes music-room-reel-spinup {
+  0% { transform: rotate(0deg); }
+  55% { transform: rotate(420deg); }
+  100% { transform: rotate(540deg); }
+}
+
+@keyframes tp7-ribbon-prime {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(26px); }
+}
+
+@keyframes tp7-ribbon-run {
+  from { transform: translateX(0); }
+  to { transform: translateX(26px); }
+}
+
+@keyframes tp7-head-engage {
+  0% {
+    transform: translateY(4px);
+    background: #666;
+  }
+  100% {
+    transform: translateY(-1px);
+    background: #00ff66;
+  }
+}
+
 .music-page .tp7-display-panel,
 .music-page .tp7-track-list,
 .music-page .cdj-transport-controls,
@@ -543,6 +1052,18 @@
   border-radius: 0;
   background: #050505;
   box-shadow: 3px 3px 0 #050505;
+}
+
+.music-page .tp7-footer-cavity {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.music-page .tp7-display-loop {
+  padding: 1px 4px;
+  border: 1px solid #00ff66;
+  color: #00ff66;
+  font-size: 6px;
+  line-height: 1.2;
 }
 
 .music-page .cdj-control-button,
@@ -596,6 +1117,24 @@
   padding: 8px;
   background: #0a0a0a;
   box-shadow: inset 0 0 0 2px #262626, 3px 3px 0 #050505;
+}
+
+.music-page .tp7-display-track-row {
+  flex-wrap: wrap;
+}
+
+.music-page .tp7-vu-housing {
+  flex: 0 0 132px;
+  width: 132px;
+}
+
+@media (max-width: 440px) {
+  .music-page .tp7-vu-housing {
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: 220px;
+    margin: 2px auto 0;
+  }
 }
 
 .music-page .tp7-display-topline {
@@ -1006,6 +1545,10 @@
   transform-style: preserve-3d;
 }
 
+.cassette-inspect-object:not(.is-dragging) {
+  transition: transform 360ms cubic-bezier(0.2, 0.85, 0.25, 1);
+}
+
 .cassette-inspect-face {
   position: absolute;
   inset: 0;
@@ -1173,6 +1716,12 @@
   touch-action: none;
 }
 
+.cassette-inspect-controls .cassette-inspect-insert.is-ready-to-insert {
+  border-color: #00ff66;
+  background: #092613;
+  color: #00ff66;
+}
+
 .cassette-inspect-insert::first-letter {
   color: #00ff66;
 }
@@ -1205,6 +1754,11 @@
   box-shadow: none;
 }
 
+.music-page .tp7-footer-key.is-loop-active .tp7-footer-led {
+  background: #00ff66;
+  box-shadow: 0 0 6px #00ff66;
+}
+
 @keyframes music-room-settle {
   from { transform: translateY(-45px) scale(0.85) rotate(-5deg); opacity: 0; } /* もし opacity が入っていたら犯人！ */
   to { transform: translateY(0) scale(1) rotate(0); opacity: 1; }
@@ -1218,14 +1772,13 @@
   .music-page .tp7-track-list {
     max-height: 200px;
   }
-  .music-page .cassette-shelf-tape > span:last-child {
+  .music-page .music-shelf-type {
     display: none;
   }
 
   .music-shelf-art {
     width: 28px;
     height: 28px;
-    margin-left: 4px;
   }
 
   .music-page .cassette-shelf-label > span:first-child {
@@ -1236,12 +1789,13 @@
   }
 
   .music-room-display {
-    min-height: 390px;
+    min-height: 445px;
   }
 
   .music-room-feature {
     width: 90%;
     gap: 3px;
+    padding: 12px 0 170px;
   }
 
   .music-room-tape {
@@ -1280,21 +1834,52 @@
     height: 56px;
   }
 
-  .music-room-dancer {
-    bottom: 80px;
-    left: 31%;
-    width: 64px;
+  .music-room-diorama {
+    bottom: 58px;
+    width: min(76%, 245px);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .music-room-feature,
+  .music-room-tape.is-inserting .music-room-tape-reel,
   .music-room-tape.is-playing .music-room-tape-reel,
+  .music-room-tape.is-fast-forwarding .music-room-tape-reel,
+  .music-room-tape.is-rewinding .music-room-tape-reel,
+  .music-room-tape.is-flipping,
   .tp7-tape-slot,
-  .music-room-dancer-body,
-  .music-room-dancer-arm-left,
-  .music-room-dancer-arm-right,
-  .music-room-dancer-feet {
+  .tp7-cassette-well.is-inserting .tp7-deck-cassette,
+  .tp7-cassette-well.is-inserting .tp7-deck-spool,
+  .tp7-cassette-well.is-playing .tp7-deck-spool-teeth,
+  .tp7-cassette-well.is-fast-forwarding .tp7-deck-spool-teeth,
+  .tp7-cassette-well.is-rewinding .tp7-deck-spool-teeth,
+  .tp7-cassette-well.is-inserting .tp7-deck-tape-ribbon,
+  .tp7-cassette-well.is-playing .tp7-deck-tape-ribbon,
+  .tp7-cassette-well.is-fast-forwarding .tp7-deck-tape-ribbon,
+  .tp7-cassette-well.is-rewinding .tp7-deck-tape-ribbon,
+  .tp7-cassette-well.is-inserting .tp7-deck-head-pin,
+  .tp7-platter-spinup,
+  .diorama-plant,
+  .diorama-lamp-glow,
+  .diorama-steam,
+  .diorama-cat-tail,
+  .diorama-chris-body,
+  .music-room-diorama.is-playing .diorama-chris-body,
+  .music-room-diorama.is-playing .diorama-chris-arm-left,
+  .music-room-diorama.is-playing .diorama-chris-arm-right,
+  .music-room-diorama.is-playing .diorama-speaker-woofer,
+  .music-room-diorama.is-inserting .diorama-speaker-woofer,
+  .music-room-diorama.is-playing .diorama-led,
+  .music-room-diorama.is-inserting .diorama-led,
+  .diorama-wave-l,
+  .diorama-wave-r,
+  .diorama-note-1,
+  .diorama-note-2 {
     animation: none;
+  }
+
+  .cassette-inspect-object:not(.is-dragging),
+  .music-page .cassette-shelf-tape-body {
+    transition: none;
   }
 }

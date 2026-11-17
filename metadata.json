@@ -1,8 +1,5 @@
-node_modules/
-build/
-dist/
-coverage/
-.DS_Store
-*.log
-.env*
-!.env.example
+{
+  "name": "CHRIS - Official Site | Afterlife",
+  "description": "Official artist site for CHRIS featuring the music video Afterlife, interactive cassette player, and BassFitter.",
+  "requestFramePermissions": []
+}
