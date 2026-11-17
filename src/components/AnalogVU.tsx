@@ -124,7 +124,7 @@ export const AnalogVU: React.FC<AnalogVUProps> = ({
     ? {
         position: 'relative',
         width: '100%',
-        height: '66px',
+        height: '100%',
         background: '#111',
         border: '2px solid #444',
         borderRadius: '2px',
@@ -269,7 +269,7 @@ export const AnalogVU: React.FC<AnalogVUProps> = ({
             bottom: '4px',
             left: '50%',
             width: '1.5px',
-            height: embedded ? '40px' : '55px',
+            height: embedded ? '76%' : '55px',
             background: 'linear-gradient(to top, #d32f2f, #111)',
             transformOrigin: 'bottom center',
             transform: `rotate(${invert ? 45 : -45}deg)`,

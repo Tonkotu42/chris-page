@@ -1175,19 +1175,29 @@
 
 .music-page .tp7-display-track-row {
   flex-wrap: wrap;
+  gap: 8px;
 }
 
 .music-page .tp7-vu-housing {
   flex: 0 0 132px;
   width: 132px;
+  height: 66px;
 }
 
 @media (max-width: 440px) {
+  .music-page .tp7-display-track-main {
+    gap: 6px;
+  }
+
+  .music-page .tp7-display-time {
+    font-size: 14px;
+  }
+
   .music-page .tp7-vu-housing {
-    flex: 1 1 100%;
-    width: 100%;
-    max-width: 220px;
-    margin: 2px auto 0;
+    flex: 0 0 clamp(98px, 29vw, 124px);
+    width: clamp(98px, 29vw, 124px);
+    height: 54px;
+    margin: 0;
   }
 }
 
@@ -1891,6 +1901,190 @@
   .music-room-diorama {
     bottom: 58px;
     width: min(76%, 245px);
+  }
+}
+
+@media (max-width: 639px) {
+  .music-page .tp7-player-drawer {
+    padding-right: 4px;
+    padding-left: 4px;
+    padding-bottom: max(4px, env(safe-area-inset-bottom));
+  }
+
+  .music-page .tp7-player-drawer.is-closed {
+    transform: translateY(calc(100% - 44px));
+  }
+
+  .music-page .tp7-drawer-trigger {
+    max-width: calc(100% - 3px);
+    height: 26px;
+    box-shadow: 3px 3px 0 #333;
+  }
+
+  .music-page .tp7-drawer-label,
+  .music-page .tp7-drawer-instruction {
+    top: 6px;
+  }
+
+  .music-page .tp7-drawer-led {
+    top: 8px;
+  }
+
+  .music-page .tp7-inspired-deck {
+    max-width: calc(100% - 3px);
+    border-width: 2px;
+    box-shadow: 3px 3px 0 #050505, inset 0 0 0 2px #343434;
+  }
+
+  .music-page .tp7-unit-header {
+    min-height: 16px;
+    padding-bottom: 4px;
+  }
+
+  .music-page .music-deck-slot {
+    min-height: 30px;
+    margin-top: 4px;
+    padding: 3px 6px;
+    box-shadow: inset 0 -3px 0 #333, 2px 2px 0 #050505;
+  }
+
+  .music-page .tp7-cassette-well {
+    margin-top: 4px;
+    padding: 3px 6px 4px;
+    box-shadow: inset 0 4px 10px rgb(0 0 0 / 85%), 2px 2px 0 #050505;
+  }
+
+  .music-page .tp7-cassette-well-header {
+    margin-bottom: 3px;
+  }
+
+  .music-page .tp7-deck-cassette {
+    padding: 3px 5px 4px;
+  }
+
+  .music-page .tp7-deck-cassette-window {
+    grid-template-columns: 26px minmax(0, 1fr) 26px;
+    gap: 6px;
+    padding: 2px 6px;
+  }
+
+  .music-page .tp7-deck-spool {
+    width: 24px;
+    height: 24px;
+  }
+
+  .music-page .tp7-deck-spool-teeth {
+    width: 15px;
+    height: 15px;
+  }
+
+  .music-page .tp7-deck-spool-core {
+    width: 5px;
+    height: 5px;
+  }
+
+  .music-page .tp7-deck-well-empty {
+    height: 30px;
+    padding: 0 10px;
+  }
+
+  .music-page .tp7-player-content {
+    gap: 4px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+
+  .music-page .tp7-display-panel {
+    padding: 5px 6px;
+  }
+
+  .music-page .tp7-display-track-row {
+    padding: 2px 0 4px;
+  }
+
+  .music-page .cdj-frequency-header {
+    margin-bottom: 2px;
+  }
+
+  .music-page .cdj-frequency-waveform,
+  .music-page .cdj-frequency-placeholder {
+    height: clamp(28px, 5.2dvh, 42px);
+    margin-bottom: 3px;
+  }
+
+  .music-page .cdj-waveform {
+    height: clamp(18px, 3.2dvh, 26px);
+    padding: 3px 5px;
+  }
+
+  .music-page .cdj-waveform-placeholder {
+    height: clamp(32px, 5.5dvh, 46px);
+  }
+
+  .music-page .tp7-drive-zone {
+    min-height: 0;
+    grid-template-columns: minmax(96px, 1fr) clamp(114px, min(36vw, 19dvh), 184px) 32px;
+    gap: 6px;
+  }
+
+  .music-page .tp7-track-list {
+    max-height: clamp(118px, min(38vw, 20dvh), 188px);
+  }
+
+  .music-page .tp7-tape-slot {
+    min-height: 48px;
+  }
+
+  .music-page .tp7-tape-drag {
+    width: 16px;
+    flex: 0 0 16px;
+    font-size: 12px;
+  }
+
+  .music-page .tp7-tape-actions {
+    width: 18px;
+    flex: 0 0 18px;
+  }
+
+  .music-page .tp7-tape-insert {
+    padding: 3px;
+  }
+
+  .music-page .tp7-reel-hub {
+    width: clamp(40px, min(12vw, 6.8dvh), 64px);
+    height: clamp(40px, min(12vw, 6.8dvh), 64px);
+  }
+
+  .music-page .cdj-volume-control.tp7-drive-volume {
+    width: 32px;
+    flex: 0 0 32px;
+    height: clamp(116px, min(36vw, 19dvh), 184px);
+  }
+
+  .music-page .cdj-volume-control::before {
+    top: 14px;
+    bottom: 14px;
+  }
+
+  .music-page .cdj-volume-fader {
+    width: clamp(82px, 13.5dvh, 118px);
+  }
+
+  .music-page .tp7-switch-bank-header {
+    margin-top: 0;
+    padding-top: 4px;
+  }
+
+  .music-page .cdj-control-button {
+    height: clamp(38px, 6.2dvh, 52px);
+  }
+
+  .music-page .tp7-footer-cavity {
+    margin-top: 4px;
+  }
+
+  .music-page .tp7-footer-key {
+    height: clamp(32px, 5dvh, 40px);
   }
 }
 

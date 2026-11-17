@@ -1907,7 +1907,7 @@ const changeCassette = (direction: -1 | 1) => {
           <strong>{dragPreview.title}</strong><span>▣ ▣</span>
         </div>
       )}
-      <div className={`tp7-player-drawer fixed inset-x-0 bottom-0 z-30 px-2 pb-2 sm:px-6 sm:pb-4 ${isPlayerExpanded ? 'is-open' : 'is-closed'}`}>
+      <div className={`tp7-player-drawer fixed inset-x-0 bottom-0 z-30 px-1 pb-1 sm:px-6 sm:pb-4 ${isPlayerExpanded ? 'is-open' : 'is-closed'}`}>
         <button
           type="button"
           aria-expanded={isPlayerExpanded}
@@ -1927,7 +1927,7 @@ const changeCassette = (direction: -1 | 1) => {
           aria-label="Cassette player"
           aria-hidden={!isPlayerExpanded}
           inert={!isPlayerExpanded}
-          className={`tp7-inspired-deck relative mx-auto w-full max-w-[500px] overflow-hidden rounded-[8px] border border-[#414349] px-3 py-3 text-[#e4e5e8] shadow-[0_14px_28px_rgb(0_0_0_/_55%)] transition sm:px-5 sm:py-5 ${isDragging ? 'scale-[1.01]' : ''}`}
+          className={`tp7-inspired-deck relative mx-auto w-full max-w-[500px] overflow-hidden rounded-[8px] border border-[#414349] px-2.5 py-2 text-[#e4e5e8] shadow-[0_14px_28px_rgb(0_0_0_/_55%)] transition sm:px-5 sm:py-5 ${isDragging ? 'scale-[1.01]' : ''}`}
         >
           <div className="tp7-unit-header flex items-center justify-between border-b border-white/10 pb-2">
             <div className="flex items-center gap-2">
@@ -2293,7 +2293,7 @@ const changeCassette = (direction: -1 | 1) => {
                   style={{
                     background: `conic-gradient(from 0deg, #eee ${turntableProgress * 100}%, #555 ${turntableProgress * 100}% 100%)`,
                   }}
-                  className={`tp7-reel-face tp7-drive-platter relative flex aspect-square w-[184px] touch-none select-none items-center justify-center rounded-full p-[7px] outline-none sm:w-[204px] ${
+                  className={`tp7-reel-face tp7-drive-platter relative flex aspect-square w-full touch-none select-none items-center justify-center rounded-full p-[7px] outline-none sm:w-[204px] ${
                     canSeekTurntable ? 'cursor-grab focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff4a1c] active:cursor-grabbing' : 'cursor-default'
                   } ${
                     activeCassette ? 'cassette-deck-snap' : ''

@@ -1134,24 +1134,24 @@ a {
 
 @media (max-width: 639px) {
   .tp7-drive-zone {
-    min-height: 0;
-    grid-template-columns: minmax(0, 1fr) 38px;
-    grid-template-areas:
-      "tracklist tracklist"
-      "platter volume";
-    gap: 8px 12px;
+    min-height: 156px;
+    grid-template-columns: minmax(96px, 1fr) clamp(124px, 38vw, 184px) 32px;
+    grid-template-areas: "tracklist platter volume";
+    gap: 8px;
   }
 
   .tp7-track-list {
-    max-height: 112px;
+    max-height: clamp(148px, 42vw, 196px);
   }
 
   .tp7-drive-platter {
-    width: min(184px, 100%);
+    width: 100%;
   }
 
   .cdj-volume-control.tp7-drive-volume {
-    height: 168px;
+    width: 32px;
+    flex: 0 0 32px;
+    height: clamp(138px, 38vw, 184px);
   }
 }
 
