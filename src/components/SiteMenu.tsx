@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
 
 const menuItems = [
-  { label: 'PRODUCTS', to: '/bassfitter' },
+  { label: 'PRODUCTS', to: '/products' },
   { label: 'MUSIC', to: '/music' },
   { label: 'GAME', to: '/game' },
   { label: 'INFO', to: '/info' },
